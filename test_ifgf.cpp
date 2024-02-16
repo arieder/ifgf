@@ -5,19 +5,19 @@
 #include "ifgfoperator.hpp"
 #include "octree.hpp"
 
+const int dim=2;
+typedef Eigen::Vector<double,dim> Point;
 
-const std::complex<double>  k= std::complex<double>(10,10);
+const std::complex<double>  k = std::complex<double>(1, 1);
 
-std::complex<double> kernel(Eigen::Vector2d x,Eigen::Vector2d y)
+std::complex<double> kernel(const Point& x, const Point& y)
 {
-    double d=(x-y).norm();
-    
-    return d==0 ? 0 : (1/(4*M_PI))*exp(-k*d)/d;
+    double d = (x - y).norm();
+
+    return d == 0 ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
 }
 
-
-
-class MyIfgfOperator : public IfgfOperator<std::complex<double> ,2,MyIfgfOperator>
+class MyIfgfOperator : public IfgfOperator<std::complex<double>, dim, MyIfgfOperator>
 {
 public:
     MyIfgfOperator(int leafSize): IfgfOperator(leafSize)
@@ -29,132 +29,114 @@ public:
     template<typename TX>
     inline T kernelFunction(TX x) const
     {
-	double d=x.norm();
-	return (d==0) ? 0 : (1/(4*M_PI))*exp(-k*d)/d;
+        double d = x.norm();
+        return (d == 0) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
     }
-
-
-    
 
     template<typename TX>
     inline T CF(TX x) const
     {
-	double d=x.norm();
-	return exp(-k*d)/(4*M_PI*d);
+        double d = x.norm();
+        return exp(-k * d) / (4 * M_PI * d);
     }
 
-
-    template<typename TX,typename TY>
+    template<typename TX, typename TY>
     inline T transfer_factor(TX x, TY xc, double H, TY pxc, double pH) const
     {
-	/*yc  = IFGF.center(Y)
-	  yp  = IFGF.center(IFGF.parent(Y))
-	  d   = norm(x-yc)
-	  dp  = norm(x-yp)
-	  exp(im*K.k*(d-dp))*dp/d
-	*/
-	double d=(x-xc).norm();
-	double dp=(x-pxc).norm();
-	
-	return exp(-k*(d-dp))*(dp/d);
+        /*yc  = IFGF.center(Y)
+          yp  = IFGF.center(IFGF.parent(Y))
+          d   = norm(x-yc)
+          dp  = norm(x-yp)
+          exp(im*K.k*(d-dp))*dp/d
+        */
+        double d = (x - xc).norm();
+        double dp = (x - pxc).norm();
+
+        return exp(-k * (d - dp)) * (dp / d);
     }
 
-    
-    void evaluateKernel(const Eigen::Ref<const PointArray> & x, const Eigen::Ref<const PointArray> & y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > & w,
-			Eigen::Ref<Eigen::Vector<T,Eigen::Dynamic> >  result) const
+    void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
+                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result) const
     {
-	assert(result.size()==y.cols());
-	assert(w.size()==x.cols());
-	
-	for(int i=0;i<x.cols();i++)
-	{	    
-	    for(int j=0;j<y.cols();j++)
-	    {
-		result[j]+=w[i]*kernelFunction(x.col(i)-y.col(j));
-	    }
-	}
+        assert(result.size() == y.cols());
+        assert(w.size() == x.cols());
+
+        for (int i = 0; i < x.cols(); i++) {
+            for (int j = 0; j < y.cols(); j++) {
+                result[j] += w[i] * kernelFunction(x.col(i) - y.col(j));
+            }
+        }
     }
 
-    
-
-    Eigen::Vector<T,Eigen::Dynamic>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> & x, const Eigen::Ref<const PointArray> & y,
-							    const Eigen::Ref<const Eigen::Vector<T,Eigen::Dynamic> > & weights,
-							    const Eigen::Vector<double,2> xc, double H) const
+    Eigen::Vector<T, Eigen::Dynamic>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
+            const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
+            const Point& xc, double H) const
     {
-	
-	Eigen::Vector<T,Eigen::Dynamic> result(y.cols());
-	result.fill(0);
-	for(int j=0;j<y.cols();j++) {
-	    double dc=(y.col(j)-xc).norm();
-	    for(int i=0;i<x.cols();i++) {
-		double d=(x.col(i)-y.col(j)).norm();
-		result[j]+=weights[i]*
-		    exp(-k*(d-dc))*(dc)/d;
-		    //kernelFunction(x.col(i)-y.col(j))*inv_CF(y.col(j)-xc);
-	    }
-	}
-	return result;
+
+        Eigen::Vector<T, Eigen::Dynamic> result(y.cols());
+        result.fill(0);
+        for (int j = 0; j < y.cols(); j++) {
+            double dc = (y.col(j) - xc).norm();
+            for (int i = 0; i < x.cols(); i++) {
+                double d = (x.col(i) - y.col(j)).norm();
+                result[j] += weights[i] *
+                             exp(-k * (d - dc)) * (dc) / d;
+                //kernelFunction(x.col(i)-y.col(j))*inv_CF(y.col(j)-xc);
+            }
+        }
+        return result;
     }
 
     inline unsigned int orderForBox(double H, unsigned int baseOrder)
     {
-	const int order = baseOrder+4*std::max(round( log(abs(k)*H)/log(2)),0.0);
+        const int order = baseOrder +  2*std::max(round(log(abs(k) * H) / log(2)), 0.0);
 
-	return order;
+        return order;
     }
-
 
 };
 
 #include <cstdlib>
 #include <tbb/task_arena.h>
 #include <tbb/global_control.h>
-int main()    
+int main()
 {
-    const int N=100000;
-    typedef Eigen::Matrix<double, 2,Eigen::Dynamic> PointArray ;
+    const int N = 100000;
+    typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
 
     //Eigen::initParallel();
-    //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism, 		1);
+    //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
-    
+
     MyIfgfOperator op(10);
 
-    PointArray srcs=(PointArray::Random(2,N).array());
-    PointArray targets=(PointArray::Random(2,N).array()+1);
+    PointArray srcs = (PointArray::Random(dim,N).array());
+    PointArray targets = (PointArray::Random(dim, N).array());
 
-    op.init(srcs,targets);  
+    op.init(srcs, targets);
 
-    
-    Eigen::Vector<std::complex<double>,Eigen::Dynamic> weights(N);
-    weights=Eigen::VectorXd::Random(N);
+    Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
+    weights = Eigen::VectorXd::Random(N);
 
-    Eigen::Vector<std::complex<double>,Eigen::Dynamic> result=op.mult(weights);
-    std::cout<<"done multiplying"<<std::endl;
+    std::cout<<"mult"<<std::endl;
+    Eigen::Vector<std::complex<double>, Eigen::Dynamic> result = op.mult(weights);
+    std::cout << "done multiplying" << std::endl;
 
     srand((unsigned) time(NULL));
-    double maxE=0;
-    for(int j=0;j<1000;j++)
-    {
-	std::complex<double> val=0;
-	int index=rand() % targets.cols();
-	//std::cout<<"idx"<<index<<std::endl;
-	for(int i=0;i<srcs.cols();i++)
-	{
-	    val+=weights[i]*kernel(srcs.col(i),targets.col(index));
-	}
+    double maxE = 0;
+    for (int j = 0; j < 1000; j++) {
+        std::complex<double> val = 0;
+        int index = rand() % targets.cols();
+        //std::cout<<"idx"<<index<<std::endl;
+        for (int i = 0; i < srcs.cols(); i++) {
+            val += weights[i] * kernel(srcs.col(i), targets.col(index));
+        }
 
-	double e=std::abs(val-result[index]);
-	maxE=std::max(e,maxE);
-	//std::cout<<"e="<<e<<" val="<<val<<" vs" <<result[index]<<std::endl;
+        double e = std::abs(val - result[index]);
+        maxE = std::max(e, maxE);
+        //std::cout<<"e="<<e<<" val="<<val<<" vs" <<result[index]<<std::endl;
     }
 
-
-    std::cout<<"summary: e="<<maxE<<std::endl;
-
-    
-       
-
-	
+    std::cout << "summary: e=" << maxE << std::endl;
 
 }
