@@ -27,12 +27,12 @@ public:
 
     inline Eigen::Vector<double, DIM> center() const
     {
-        return 0.5 * (this->max() + this->min());
+        return  (this->max() + this->min())/2.0;
     }
 
     inline double sideLength() const
     {
-        auto diag = this->max() - this->min();
+        auto diag = this->diagonal();
         double m = 0;
         for (unsigned int i = 0; i < DIM; i++) {
             m = std::max(m, diag[i]);
@@ -40,6 +40,7 @@ public:
         return m;
     }
 
+    
     /*
 
     inline void absorb(const BoundingBox& other)

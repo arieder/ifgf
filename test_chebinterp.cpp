@@ -9,16 +9,16 @@
 
 int main()
 {
-    const int N = 500;
-    const int dim = 3;
+    const int N = 50*50;
+    const int dim = 2;
 
     typedef std::complex<double> T;
-    Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N);
+    Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N)+0.01;
 
-    const double H = 1;
+    const double H = 0.001;
     const double k = 1;
     typedef Eigen::Vector<double, dim> Point;
-    const Point xc{0, H / 2,0};
+    const Point xc{0, H / 2};
     auto kernel = [&](auto pnt) {
         //pnt[0]=r , pnt[1]=theta
         Point x;
@@ -27,14 +27,14 @@ int main()
         x[1] = pnt[0]*sin(pnt[1]);
 
         x -= xc;
-        const double d = x.norm();
+        const double d = x.norm();       
         //std::cout<<"["<<H/pnt[0]<<", "<<(pnt[0]/d)*sin(k*(d-pnt[0]))<<"], ";//<<std::endl;
-        return (pnt[0]/d);//*exp(-T(0,1)*k*(d-pnt[0]));
+        return (pnt[0]/d)*exp(-T(0,1)*k*(d-pnt[0]));
     };
 
     auto kernel2 = [&](auto pnt) {
-        const double s0=0.1;
-        const double s1=sqrt(3)/3;
+        const double s0=0;
+        const double s1=sqrt(dim)/dim;
         const double s = 0.5 * ((s1 - s0) * pnt[0] + (s1 + s0));
         //double s = std::min(1e-4 + 0.9 * (pnt[0] + 1),1.0);
         double r =  H / s;
@@ -46,11 +46,11 @@ int main()
         return kernel(Eigen::Vector2d{r,theta});
     };
 
-    const int p = 15;
+    const int p = 50;
     auto interp_nodes = ChebychevInterpolation::chebnodesNd<double, p, dim>();
 
-
     Eigen::Array<T, Eigen::Dynamic, 1> interp_values(interp_nodes.cols());
+    interp_values.fill(0);
     for (int i = 0; i < interp_nodes.cols(); i++) {
         const Eigen::Vector<double, dim> &pnt = interp_nodes.col(i);
 
@@ -65,7 +65,6 @@ int main()
     std::cout<<"2"<<std::endl;
     Eigen::Array<T, Eigen::Dynamic, 1> approx_values(N);
     //Eigen::internal::set_is_malloc_allowed(false);
-    //Eigen::VectorXd interp_values(N);
 
     ChebychevInterpolation::parallel_evaluate<T, p, dim>(points, interp_values, approx_values);
 

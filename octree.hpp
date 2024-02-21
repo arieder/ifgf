@@ -10,10 +10,11 @@
 #include "util.hpp"
 #include "boundingbox.hpp"
 #include "zorder_less.hpp"
+#include "chebinterp.hpp"
 
+#include <tbb/spin_mutex.h>
 typedef std::pair<size_t, size_t> IndexRange;
 
-#define MAX_DEPTH 6
 
 template<typename T, size_t DIM>
 class Octree
@@ -35,7 +36,8 @@ public:
         IndexRange m_srcRange;
         IndexRange m_targetRange;
 
-        //std::map<ConeIndex,Cone> m_relevant_cones;
+	ChebychevInterpolation::ConeDomain<DIM> m_coneDomain;
+	//std::map<ConeIndex,Cone> m_relevant_cones;
 
         BoundingBox<DIM> m_bbox;
 
@@ -105,6 +107,22 @@ public:
             m_isLeaf = false;
             m_dirty = true;
         }
+
+	void setConeDomain(const ChebychevInterpolation::ConeDomain<DIM>& domain)
+	{
+	    m_coneDomain=domain;
+	}
+
+	const ChebychevInterpolation::ConeDomain<DIM>& coneDomain() const
+	{
+	    return m_coneDomain;
+	}
+
+
+	BoundingBox<DIM> interpolationRange() const
+	{
+	    return m_coneDomain.domain();
+	}
 
         const std::shared_ptr<const OctreeNode> child(size_t idx) const
         {
@@ -216,9 +234,18 @@ public:
         m_target_permutation = Util::sort_with_permutation(std::execution::par, targets.colwise().begin(), targets.colwise().end(), zorder_knn::Less<Point, DIM>(bbox));
         m_targets = Util::copy_with_permutation(targets, m_target_permutation);
 
-        std::cout << "building the nodes" << std::endl;
-        m_levels = 0;
+
+	m_diameter=bbox.diagonal().norm();
+
+	m_levels = 0;
+	m_depth=-1;
         m_root = buildOctreeNode(0, std::make_pair(0, m_srcs.cols()), std::make_pair(0, m_targets.cols()), bbox);
+	m_depth=m_levels;
+	//We are now left with a sparse octree. Our algorithms require it to be balanced, so we refine some more up to the finished depth
+	//fillupOctree(m_root);
+	
+        std::cout << "building the nodes up to level"<<m_depth << std::endl;
+        
 
         buildNeighborList(m_root);
 
@@ -254,6 +281,119 @@ public:
             buildNeighborList(node->child(j));
         }
 
+    }
+
+    void calculateInterpolationRange(  std::function<size_t(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H)
+    {
+	//No interpolation at the two highest levels 
+	for (size_t level=2;level<levels();level++) {
+	    //update all nodes in this level
+	    tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
+            for(size_t n=r.begin();n<r.end();++n) {
+		std::shared_ptr<OctreeNode> node=m_nodes[level][n];
+		BoundingBox<DIM> box;
+
+		//do nothing  if there are no sources
+	    	if(node==0 || node->srcRange().first==node->srcRange().second)
+		    continue;
+		
+		const Point xc=node->boundingBox().center();
+		const double H=node->boundingBox().sideLength();
+		const std::vector<IndexRange> cT=cousinTargets(node);
+
+		for(const IndexRange& iR : cT)
+		{				    
+		    for(int i=iR.first;i<iR.second;i++) {
+			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);			  
+			box.extend(s); //make sure the target is in the interpolation domain
+		    }
+		}
+
+		//now also add all the parents targets
+		const BoundingBox pBox=node->parent()->interpolationRange();
+		const Point pxc=node->parent()->boundingBox().center();
+		const double pH=node->parent()->boundingBox().sideLength();
+
+
+		//transform the parents interpolation range to the physical coordinates
+		auto cMin=Util::interpToCart<DIM>(pBox.min(),pxc,pH);
+		auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
+
+		//pull those physical coordinates back to the interpolation-coordinates of node
+		box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
+		box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
+
+		if(!pBox.isNull())
+		{
+		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
+		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
+		    for(size_t el : p_grid.activeCones() ) {			
+			for (size_t i=0;i<chebNodes.cols();i++) {
+			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);
+			    box.extend(Util::cartToInterp<DIM>(pnt,xc,H));
+			}
+		    }
+		}
+
+		ChebychevInterpolation::ConeDomain<DIM> domain(N_for_H(H),box);
+
+		//now we need to do the whole thing again to figure out which cones are active...
+		std::vector<bool> is_cone_active(domain.n_elements());
+		std::fill(is_cone_active.begin(),is_cone_active.end(),false);
+		
+		for(const IndexRange& iR : cT)
+		{				    
+		    for(int i=iR.first;i<iR.second;i++)
+		    {
+			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);			  
+
+			auto coneId=domain.elementForPoint(s);
+			is_cone_active[coneId]=true;
+		    }
+		}
+
+		if(!pBox.isNull())
+		{
+		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
+		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
+		    for(size_t el : p_grid.activeCones() ) {			
+		    	for (size_t i=0;i<chebNodes.cols();i++) {
+			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);			    
+			    auto coneId=domain.elementForPoint(pnt);
+			    is_cone_active[coneId]=true;
+			}
+		    }
+		}
+
+
+		std::vector<size_t> active_cones;
+		std::vector<size_t> cone_map(domain.n_elements());
+		for(size_t i=0;i<domain.n_elements();i++)
+		{
+		    if(is_cone_active[i]) {
+			active_cones.push_back(i);
+			cone_map[i]=active_cones.size()-1;
+		    }
+		    
+		}
+
+		domain.setActiveCones(active_cones);
+		domain.setConeMap(cone_map);
+
+		//std::cout<<"level"<<node->level()<<"range:"<<box.min().transpose()<<" "<<box.max().transpose()<<std::endl;
+		node->setConeDomain(domain);
+		//node->setInterpolationRange(box);
+	    }});
+	}
+    
+    }
+
+
+	
+    
+    inline double diameter () const
+    {
+	return m_diameter;
     }
 
     unsigned int levels() const
@@ -337,11 +477,14 @@ public:
         return neighbors;
 
     }
-
     const std::vector<IndexRange> cousinTargets(unsigned int level, size_t i) const
     {
         std::shared_ptr<OctreeNode> node = m_nodes[level][i];
+	return cousinTargets(node);
+    }
 
+    const std::vector<IndexRange> cousinTargets(std::shared_ptr<OctreeNode> node) const
+    {        
         std::vector<IndexRange> cousins;
 
         //add some of the children of the parents neighbours
@@ -366,9 +509,24 @@ public:
         return m_nodes[level][i]->boundingBox();
     }
 
+
+    const BoundingBox<DIM> interpolationRange(unsigned int level, size_t i) const
+    {
+        return m_nodes[level][i]->interpolationRange();
+    }
+
+    const ChebychevInterpolation::ConeDomain<DIM> coneDomain(unsigned int level, size_t i) const
+    {
+        return m_nodes[level][i]->coneDomain();
+    }
+
+
+    
     const size_t parentId(unsigned int level, size_t i) const
     {
-        return m_nodes[level][i]->parent()->id();
+	size_t id = m_nodes[level][i]->parent()->id();
+	assert(m_nodes[level-1][id]==m_nodes[level][i]->parent());
+        return id;
     }
 
     const bool hasSources(unsigned int level, size_t i) const
@@ -431,27 +589,28 @@ private:
             m_numBoxes.push_back(0);
         }
 
-        auto node = std::make_shared<OctreeNode >(parent, level);
+	auto node = std::make_shared<OctreeNode >(parent, level);
+	
+	node->setSrcRange(src_range);
+	node->setTargetRange(target_range);
+	    
+	node->setBoundingBox(bbox);
 
-        node->setSrcRange(src_range);
-        node->setTargetRange(target_range);
+	m_numBoxes[level] += 1;
+	node->setId(m_nodes[level].size());
+	m_nodes[level].push_back(node);
+	    
+	if (level ==  m_depth) {
+	    return node;
+	}
 
-        node->setBoundingBox(bbox);
-
-        m_numBoxes[level] += 1;
-        node->setId(m_nodes[level].size());
-        m_nodes[level].push_back(node);
-
-        if (level == MAX_DEPTH) {
-            return node;
-        }
-
-        //std::cout<<"building node"<<src_range.first<<" to "<<src_range.second<<" and "<<target_range.first<<" to "<<target_range.second<<std::endl;
-        /*if( src_range.second-src_range.first<=m_maxLeafSize &&
-            target_range.second-target_range.first<=m_maxLeafSize ) {
-            //std::cout<<"leaf"<<std::endl;
-            return node;
-            }*/
+	//std::cout<<"building node"<<src_range.first<<" to "<<src_range.second<<" and "<<target_range.first<<" to "<<target_range.second<<std::endl;
+	if( m_depth== -1 &&
+	    src_range.second-src_range.first<=m_maxLeafSize &&
+	    target_range.second-target_range.first<=m_maxLeafSize ) {
+	    //std::cout<<"leaf"<<src_range.second-src_range.first<<std::endl;
+	    return node;
+	}
 
         size_t src_idx = src_range.first;
         size_t target_idx = target_range.first;
@@ -464,7 +623,7 @@ private:
             min = bbox.min();
             max = bbox.max();
 
-            Eigen::Vector<double, DIM> size = 0.5 * (max - min);
+            Eigen::Vector<double, DIM> size = 0.5d * bbox.diagonal();
 
             //find the quadrant that the next src idx belongs to
 
@@ -501,6 +660,76 @@ private:
 
     }
 
+    void fillupOctree(std::shared_ptr<OctreeNode > node)
+    {
+	if (node->level() == m_depth) {
+	    return;
+	}
+
+	//if we are not in a leaf, just recurse down
+	if(!node->isLeaf()) {
+	    for (int j = 0; j < N_Children; j++) {
+		fillupOctree(node->child(j));
+	    }
+	}
+	else //switch to building more of the octree
+	{
+	    IndexRange src_range=node->srcRange();
+	    IndexRange target_range=node->targetRange();
+		
+	    size_t src_idx = src_range.first;
+	    size_t target_idx = target_range.first;
+
+	    BoundingBox<DIM> bbox=node->boundingBox();
+	    size_t level=node->level();
+
+	    for (int j = 0; j < N_Children; j++) {
+		Point min;
+		Point max;
+
+		//std::cout<<"finding bbox from parent"<<std::endl;
+		min = bbox.min();
+		max = bbox.max();
+
+		Eigen::Vector<double, DIM> size = 0.5d * bbox.diagonal();
+
+		//find the quadrant that the next src idx belongs to
+
+		auto tuple_idx = compute_tuple_idx(j);
+		min.array() += size.array() * tuple_idx.array();
+		max = min + size;
+
+		BoundingBox<DIM> child_bbox(min, max);
+
+		//std::cout<<"building child "<<j<<" at"<<child_bbox.min().transpose()<<" "<<child_bbox.max().transpose()<<std::endl;
+
+		size_t end_src = src_idx;
+		size_t end_target = target_idx;
+
+		while (end_src < src_range.second && child_bbox.contains(m_srcs.col(end_src))) {
+		    ++end_src;
+		}
+
+		while (end_target < target_range.second && child_bbox.contains(m_targets.col(end_target))) {
+		    ++end_target;
+		}
+
+		//assert(src_idx>=src_range.first && end_src <=src_range.second);
+		//std::cout<<"src:"<<src_idx<<end_src<<std::endl;
+		const IndexRange src(src_idx, end_src);
+		const IndexRange target(target_idx, end_target);
+		node->setChild(j, buildOctreeNode(node, src, target, child_bbox, level + 1));
+
+		src_idx = end_src;
+		target_idx = end_target;
+	    }
+	}
+
+
+    }
+
+
+
     inline Eigen::Vector<double, DIM> compute_tuple_idx(size_t idx) const
     {
         Eigen::Vector<double, DIM> tuple;
@@ -523,11 +752,13 @@ private:
     std::vector<unsigned int> m_numBoxes;
     unsigned int m_levels;
 
+    unsigned int m_depth;
     size_t m_maxLeafSize;
     PointArray m_srcs;
     PointArray m_targets;
     std::vector<size_t> m_src_permutation;
     std::vector<size_t>  m_target_permutation;
+    double m_diameter;
 };
 
 #endif

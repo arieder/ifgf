@@ -18,10 +18,16 @@ class IfgfOperator
 public:
     typedef Eigen::Matrix<double, DIM, Eigen::Dynamic, Eigen::RowMajor> PointArray;
 
-    IfgfOperator(const int maxLeafSize = 100)
+    IfgfOperator(const int maxLeafSize = 100, const int order=4)
     {
         m_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
+	m_base_n_elements[0]=2;
+	m_base_n_elements[1]=4;
 
+	if constexpr (DIM==3) {
+	    m_base_n_elements[2]=2;
+	}
+	m_baseOrder=order;
     }
 
     ~IfgfOperator()
@@ -32,36 +38,54 @@ public:
     void init(const PointArray &srcs, const PointArray targets)
     {
         m_octree->build(srcs, targets);
-
+       
         m_octree->sanitize();
+
+	const double hmin=m_octree->diameter()*std::pow(0.5,m_octree->levels());
+
+	m_smin=0.1*hmin/m_octree->diameter();
+	std::cout<<"hmin="<<hmin<<" vs "<<m_smin<<std::endl;
 
         m_numTargets = targets.cols();
         m_numSrcs = srcs.cols();
+
+	std::cout<<"calculating interp range"<<std::endl;
+	m_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},[this](double H){return this->m_base_n_elements;});
+
     }
 
     Eigen::Vector<T, Eigen::Dynamic> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
-        unsigned int baseOrder = 30;
+        unsigned int baseOrder = m_baseOrder;       
+	Eigen::Vector<size_t,DIM> n_el=m_base_n_elements;
 
+	std::cout<<"mult"<<baseOrder<<std::endl;
+
+	std::cout<<"permutation"<<std::endl;
         Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation<T, 1> (weights, m_octree->src_permutation());
         Eigen::Vector<T, Eigen::Dynamic> result(m_numTargets);
         result.fill(0);
         unsigned int level = m_octree->levels() - 1;
 
-        std::vector<ChebychevInterpolation::InterpolationData<T> > interpolationData(m_octree->numBoxes(level));
-        std::vector<ChebychevInterpolation::InterpolationData<T> > parentInterpolationData;
+	std::cout<<"boxes="<<m_octree->numBoxes(level)<<std::endl;
+        std::vector<ChebychevInterpolation::InterpolationData<T,DIM> > interpolationData(m_octree->numBoxes(level));
+        std::vector<ChebychevInterpolation::InterpolationData<T,DIM> > parentInterpolationData;
+
+	std::cout<<"now go"<<std::endl;
+
 
         tbb::spin_mutex resultMutex;
         tbb::spin_mutex interpDataMutex;
 
-        int oldOrder = baseOrder;
+
 #ifdef CHECK_CONNECTIVITY
         Eigen::MatrixXi connectivity(m_numSrcs, m_numTargets);
         connectivity.fill(0);
 #endif
-        PointArray transformedNodes(DIM, baseOrder);
+
         tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
         [&](tbb::blocked_range<size_t> r) {
+	    int oldOrder = baseOrder;
             PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
             PointArray transformedNodes(DIM, chebNodes.cols());
             Eigen::Vector<T, Eigen::Dynamic> tmp_result;
@@ -72,12 +96,16 @@ public:
                 IndexRange srcs = m_octree->sources(level, i);
                 const size_t nS = srcs.second - srcs.first;
 
+		if(nS==0) //skip empty boxes
+		    continue;
+
                 BoundingBox bbox = m_octree->bbox(level, i);
                 auto center = bbox.center();
                 double H = bbox.sideLength();
 
                 const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
                 if (order != oldOrder) {
+		    //std::cout<<"Interpolation"<<order<<std::endl;
                     chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order);
                     transformedNodes.resize(DIM, chebNodes.cols());
                     oldOrder = order;
@@ -113,11 +141,27 @@ public:
 
                 }
 
-                transformInterpToCart(chebNodes, transformedNodes, center, H);
+                	       
+		auto grid=m_octree->coneDomain(level,i);
 
+		//std::cout<<"grid="<<grid.domain().min().transpose()<<std::endl;
                 interpolationData[i].order = order;
-                interpolationData[i].values =
-                    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), center, H);
+		interpolationData[i].grid=grid;
+
+		assert(chebNodes.cols()==std::pow(order,DIM));
+
+		//std::cout<<"interp"<<std::endl;
+		interpolationData[i].values.resize(grid.activeCones().size()*chebNodes.cols());		
+		const size_t stride=chebNodes.cols();
+		for (int memId =0;memId<interpolationData[i].grid.activeCones().size();memId++) {
+		    //std::cout<<"mem"<<memId;
+		    const size_t el=interpolationData[i].grid.activeCones()[memId];
+		    
+		    //std::cout<<"el"<<el<<std::endl;
+		    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
+		    interpolationData[i].values.segment(memId*stride,stride) =
+			static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), center, H);
+		}
 
             }
         });
@@ -131,13 +175,11 @@ public:
             std::cout << "step 1" << std::endl;
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
             [&](tbb::blocked_range<size_t> r) {
-                PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
-                PointArray transformedNodes(DIM, chebNodes.cols());
                 Eigen::Vector<T, Eigen::Dynamic> tmp_result;
                 for (size_t i = r.begin(); i < r.end(); i++) {
 
-                    //if(!m_octree->hasSources(level,i))
-                    //    continue;
+                    if(!m_octree->hasSources(level,i))
+                        continue;
 
                     BoundingBox bbox = m_octree->bbox(level, i);
                     auto center = bbox.center();
@@ -156,9 +198,8 @@ public:
                         }
 #endif
                         tmp_result.resize(nT);
-
-                        evaluateFromInterp(interpolationData[i].values, m_octree->targetPoints(cousinTargets[l]),
-                                           interpolationData[i].order, center, H,
+			//std::cout<<"eval"<<std::endl;
+                        evaluateFromInterp(interpolationData[i], m_octree->targetPoints(cousinTargets[l]), center, H,
                                            tmp_result);
 
                         {
@@ -177,18 +218,24 @@ public:
             parentInterpolationData.resize(m_octree->numBoxes(level - 1));
             for (int pId = 0; pId < parentInterpolationData.size(); pId++) {
                 BoundingBox bbox = m_octree->bbox(level - 1, pId);
+		//std::cout<<"bbox="<<bbox.min().transpose()<<" "<<bbox.max().transpose()<<std::endl;
                 auto center = bbox.center();
                 double H = bbox.sideLength();
 
                 const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
-
-                parentInterpolationData[pId].values.resize(ChebychevInterpolation::chebnodesNdd<double, DIM>(order).cols());
+		auto grid= m_octree->coneDomain(level-1,pId);		
+		parentInterpolationData[pId].grid = grid;
+		parentInterpolationData[pId].values.resize(grid.activeCones().size()*pow(order,DIM));
+                //parentInterpolationData[pId].values.resize(ChebychevInterpolation::chebnodesNdd<double, DIM>(order).cols());
                 parentInterpolationData[pId].values.fill(0);
                 parentInterpolationData[pId].order = order;
+
+		//std::cout<<"Interpolation"<<order<<std::endl;
 
             }
 
             std::cout << "step 3" << std::endl;
+	    
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
             [&](tbb::blocked_range<size_t> r) {
                 PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
@@ -203,8 +250,8 @@ public:
                     }
                     //current node
                     BoundingBox bbox = m_octree->bbox(level, i);
-                    auto center = 0.5 * (bbox.max() + bbox.min());
-                    double H = ((bbox.max() - bbox.min()))[0];
+                    auto center = bbox.center();
+                    double H = bbox.sideLength();
 
                     //parent node
                     size_t parentId = m_octree->parentId(level, i);
@@ -220,21 +267,37 @@ public:
                         old_p_order = p_order;
                     }
 
-                    transformInterpToCart(chebNodes, transformedNodes, parent_center, pH); //points at which we need to evaluate the interpolation info
 
-                    tmpInterpolationData.resize(chebNodes.cols());
+		    auto grid=parentInterpolationData[parentId].grid;
+                    tmpInterpolationData.resize(grid.activeCones().size()*chebNodes.cols());
                     tmpInterpolationData.fill(0);
 #ifdef TWO_GRID_ONLY
                     IndexRange srcs = m_octree->sources(level, i);
                     int nS = srcs.second - srcs.first;
 
-                    transformInterpToCart(chebNodes, transformedNodes, parent_center, pH);
+		    
+		    const size_t stride=chebNodes.cols();
 
-                    tmpInterpolationData =
-                        static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
+		    if(!grid.isEmpty()) {
+			for (int memId =0;memId<grid.activeCones().size();memId++) {
+			    const size_t el=grid.activeCones()[memId];
+			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);
+			    tmpInterpolationData.segment(memId*stride,stride) =
+				static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
+			}
+		    }
+
+                    //tmpInterpolationData =
+                    //    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
 #else
-
-                    transferInterp(interpolationData[i].values, transformedNodes, interpolationData[i].order, center, H, parent_center, pH, tmpInterpolationData);
+		    if(!grid.isEmpty()) {
+			const size_t stride=chebNodes.cols();
+			for (int memId =0;memId<grid.activeCones().size();memId++) {
+			    const size_t el=grid.activeCones()[memId];
+			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);			
+			    transferInterp(interpolationData[i], transformedNodes, center, H, parent_center, pH, tmpInterpolationData.segment(memId*stride,stride));			
+			}
+		    }
 #endif
 
                     //Free the data we no longer use
@@ -243,7 +306,6 @@ public:
                         assert(parentInterpolationData[parentId].values.size() == tmpInterpolationData.size());
                         tbb::spin_mutex::scoped_lock lock(interpDataMutex);
                         parentInterpolationData[parentId].values.matrix() += tmpInterpolationData;
-
                     }
                 }
             });
@@ -259,8 +321,8 @@ public:
         return Util::copy_with_inverse_permutation<T, 1>(result, m_octree->target_permutation());
     }
 
-    inline void transferInterp(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &data, const Eigen::Ref<const PointArray> &targets,
-                               unsigned int interp_order, const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
+    inline void transferInterp(const ChebychevInterpolation::InterpolationData<T,DIM>& data, const Eigen::Ref<const PointArray> &targets,
+			       const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                                const Eigen::Ref<const Eigen::Vector<double, DIM> > &p_xc, double pH,
                                Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > result) const
     {
@@ -268,118 +330,79 @@ public:
         PointArray transformed(DIM, targets.cols());
         transformCartToInterp(targets, transformed, xc, H);
 
-        ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array(), data.array(), result, interp_order);
+	result.fill(0);
+	const size_t stride=std::pow(data.order,DIM);
+	//std::cout<<"stride"<<stride<<std::endl;
+	size_t idx=0;
+	while (idx<transformed.cols())
+	{
+	    size_t nb=1;
+	    const size_t el=data.grid.elementForPoint(transformed.col(idx));
+	    const size_t memId=data.grid.memId(el);
+	    
+	    transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
+	    //look if any of the following points are also in this elemnt. that way we can process them together
+	    while(idx+nb<transformed.cols() && data.grid.elementForPoint(transformed.col(idx+nb))==el) {
+		transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
+		nb++;
+	    }
+	    ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array().middleCols(idx,nb), data.values.segment(memId*stride,stride), result.segment(idx,nb), data.order);
+	    idx+=nb;
+	}
+	
         for (unsigned int j = 0; j < targets.cols(); j++) {
             const T tf = static_cast<const Derived *>(this)->transfer_factor(targets.col(j), xc, H, p_xc, pH);
-            result[j] *= tf;
+            result[j] = tf*result[j];
         }
 
     }
 
-    inline void evaluateFromInterp(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &data, const Eigen::Ref<const PointArray> &targets,
-                                   unsigned int interp_order, const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
+    inline void evaluateFromInterp(const ChebychevInterpolation::InterpolationData<T,DIM>& data, const Eigen::Ref<const PointArray> &targets,
+				   const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                                    Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > result) const
     {
-        PointArray transformed(DIM, targets.cols());
-        transformCartToInterp(targets, transformed, xc, H);
+	//std::cout<<"efromInt"<<data.order<<std::endl;
+	//sort the points into the corresponding cones
+	PointArray transformed(DIM, targets.cols());
+	transformCartToInterp(targets, transformed, xc, H);
+	const size_t stride=std::pow(data.order,DIM);
+	//std::cout<<"stride"<<stride<<std::endl;
+	size_t idx=0;
+	while (idx<transformed.cols())
+	{
+	    //std::cout<<"idx"<<idx<<std::endl;
+	    size_t nb=1;	    
+	    const size_t el=data.grid.elementForPoint(transformed.col(idx));	    
+	    const size_t memId=data.grid.memId(el);
+	   
 
-        // //TMP TESTING CODE
-        // PointArray tmp2(DIM,targets.cols());
-        // transformInterpToCart(transformed,tmp2,xc,H);
-        // assert((tmp2-targets).norm()<1e-14);
 
-        ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array(), data.array(), result, interp_order);
-
+	    //std::cout<<"el="<<el<<" "<<transformed.col(idx)<<std::endl;
+	    transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
+	    //look if any of the following points are also in this elemnt. that way we can process them together
+	    while(idx+nb<transformed.cols() && data.grid.elementForPoint(transformed.col(idx+nb))==el) {
+		transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));
+		nb++;
+	    }
+	    //std::cout<<"bla"<<el<<" "<<data.grid.n_elements()<<" "<<el*stride<<" "<<stride<<" "<<data.values.size()<<std::endl;
+	    ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array().middleCols(idx,nb), data.values.segment(memId*stride,stride), result.segment(idx,nb), data.order);
+	    idx+=nb;
+	}
+	
+		
         for (unsigned int j = 0; j < targets.cols(); j++) {
             const auto cf = static_cast<const Derived *>(this)->CF(targets.col(j) - xc);
             result[j] *= cf;
         }
+	//std::cout<<"done"<<data.order<<std::endl;
     }
 
-    inline Eigen::Vector<double, DIM> interpToCart(Eigen::Vector<double, DIM> p, const Eigen::Vector<double, DIM> &xc, double H) const
-    {
-        //p is in (-1,1) we need to sample s in (1/3,sqrt(3)/3) add a corresponding m
-        const double s0 = 1e-12;
-        const double s1 = sqrt(DIM) / (double) DIM;
-
-        const double s = 0.5 * ((s1 - s0) * p[0] + (s1 + s0));
-
-        //std::cout<<"s="<<s0<<" "<<s<<" "<<s1<<" "<<p[0]<<std::endl;
-        assert(s0-1e-8 <= s && s <= s1+1e-8);
-        const double theta = M_PI * p[1];
-
-        Eigen::Vector<double, DIM> res = xc;
-
-        const double r = H / s;
-        if constexpr(DIM==2) {
-            res[0] += r * cos(theta);
-            res[1] += r * sin(theta);
-        }else {
-            assert(DIM==3);
-            const double phi=(M_PI/2.0)*p[2];
-            res[0] += r * cos(phi)*sin(theta);
-            res[1] += r * sin(phi)*sin(theta);
-            res[1] += r* cos(theta);
-        }
-
-        return  res;
-    }
-
-    inline Eigen::Vector<double, DIM> cartToInterp(Eigen::Vector<double, DIM> p, const Eigen::Vector<double, DIM> &xc, double H) const
-    {
-        auto xp = p - xc;
-
-
-        if constexpr (DIM==2) {
-             const double r = xp.norm();
-
-            const double phi = std::atan2(xp[1], xp[0]);
-
-            const double s = H / r;
-
-            const double s0 = 1e-12; //1e-8;
-            const double s1 = sqrt(DIM) / (double) DIM;
-
-            const double q = (s - (s1 + s0) / 2.0) / ((s1 - s0) / 2);
-
-            Eigen::Vector<double, DIM> res;
-            res[0] = q;
-            res[1] = phi / (M_PI);
-
-            assert(-1.0001 <= res[0] && res[0] <= 1.0001);
-            assert(-1 <= res[1] && res[1] <= 1);
-
-            return  res;
-
-        }else{
-            assert(DIM==3);
-            const double phi = std::atan2(xp[1], xp[0]);
-            const double a=(xp[0]*xp[0]+xp[1]*xp[1]);
-            const double theta= std::atan2(sqrt(a),xp[2]);
-            const double r= sqrt(a+xp[2]*xp[2]);
-
-            const double s=H/r;
-            const double s0=1e-12;
-            const double s1 = sqrt(DIM) / (double) DIM;
-
-            const double q = (s - (s1 + s0) / 2.0) / ((s1 - s0) / 2);
-
-            Eigen::Vector<double, DIM> res;
-            res[0] = q;
-            res[1] = phi / (M_PI);
-            res[2]= phi/ (2*M_PI);
-
-            return  res;
-
-        }
-
-    }
 
     void transformCartToInterp(const Eigen::Ref<const PointArray > &nodes,
                                Eigen::Ref<PointArray > transformed, const Eigen::Vector<double, DIM> &xc, double H) const
     {
         for (int i = 0; i < nodes.cols(); i++) {
-            transformed.col(i) = cartToInterp(nodes.col(i), xc, H);
+            transformed.col(i) = Util::cartToInterp<DIM>(nodes.col(i), xc, H);
         }
     }
 
@@ -388,16 +411,17 @@ public:
     {
 
         for (int i = 0; i < nodes.cols(); i++) {
-            transformed.col(i) = interpToCart(nodes.col(i), xc, H);
+            transformed.col(i) = Util::interpToCart<DIM>(nodes.col(i), xc, H);
         }
     }
 
 private:
-
     std::unique_ptr<Octree<T, DIM> > m_octree;
     unsigned int m_numTargets;
     unsigned int m_numSrcs;
-
+    double m_smin;
+    Eigen::Vector<size_t, DIM> m_base_n_elements;
+    size_t m_baseOrder;
 };
 
 #endif

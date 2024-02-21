@@ -8,7 +8,7 @@
 const int dim=2;
 typedef Eigen::Vector<double,dim> Point;
 
-const std::complex<double>  k = std::complex<double>(1, 1);
+const std::complex<double>  k = std::complex<double>(0, 4);
 
 std::complex<double> kernel(const Point& x, const Point& y)
 {
@@ -20,7 +20,7 @@ std::complex<double> kernel(const Point& x, const Point& y)
 class MyIfgfOperator : public IfgfOperator<std::complex<double>, dim, MyIfgfOperator>
 {
 public:
-    MyIfgfOperator(int leafSize): IfgfOperator(leafSize)
+    MyIfgfOperator(int leafSize, size_t order): IfgfOperator(leafSize,order)
     {
     }
 
@@ -52,7 +52,8 @@ public:
         double d = (x - xc).norm();
         double dp = (x - pxc).norm();
 
-        return exp(-k * (d - dp)) * (dp / d);
+	
+        return d==0 ? 1 : exp(-k * (d - dp)) * (dp / d);
     }
 
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
@@ -79,8 +80,11 @@ public:
             double dc = (y.col(j) - xc).norm();
             for (int i = 0; i < x.cols(); i++) {
                 double d = (x.col(i) - y.col(j)).norm();
-                result[j] += weights[i] *
-                             exp(-k * (d - dc)) * (dc) / d;
+		if(!std::isfinite(d))
+		    continue;
+                result[j] +=
+		    (d==0) ? 0 : weights[i] * 
+		    exp(-k * (d - dc)) * (dc) / d;
                 //kernelFunction(x.col(i)-y.col(j))*inv_CF(y.col(j)-xc);
             }
         }
@@ -89,8 +93,8 @@ public:
 
     inline unsigned int orderForBox(double H, unsigned int baseOrder)
     {
-        const int order = baseOrder +  2*std::max(round(log(abs(k) * H) / log(2)), 0.0);
-
+	
+        const int order = baseOrder ;//+  std::max(round(log(abs(k) * 2*H) / log(2)), 0.0);	
         return order;
     }
 
@@ -99,16 +103,18 @@ public:
 #include <cstdlib>
 #include <tbb/task_arena.h>
 #include <tbb/global_control.h>
+#include <fenv.h>
 int main()
 {
-    const int N = 100000;
+    const int N = 10000;
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
+
 
     //Eigen::initParallel();
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    MyIfgfOperator op(10);
+    MyIfgfOperator op(100,25);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
@@ -118,13 +124,14 @@ int main()
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
     weights = Eigen::VectorXd::Random(N);
 
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     std::cout<<"mult"<<std::endl;
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> result = op.mult(weights);
     std::cout << "done multiplying" << std::endl;
 
     srand((unsigned) time(NULL));
     double maxE = 0;
-    for (int j = 0; j < 1000; j++) {
+    for (int j = 0; j < 100; j++) {
         std::complex<double> val = 0;
         int index = rand() % targets.cols();
         //std::cout<<"idx"<<index<<std::endl;
