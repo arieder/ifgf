@@ -304,7 +304,7 @@ public:
 		for(const IndexRange& iR : cT)
 		{				    
 		    for(int i=iR.first;i<iR.second;i++) {
-			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);			  
+			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);
 			box.extend(s); //make sure the target is in the interpolation domain
 		    }
 		}
@@ -315,16 +315,19 @@ public:
 		const double pH=node->parent()->boundingBox().sideLength();
 
 
-		//transform the parents interpolation range to the physical coordinates
-		auto cMin=Util::interpToCart<DIM>(pBox.min(),pxc,pH);
-		auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
-
-		//pull those physical coordinates back to the interpolation-coordinates of node
-		box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
-		box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
-
 		if(!pBox.isNull())
 		{
+
+		    //transform the parents interpolation range to the physical coordinates
+		    auto cMin=Util::interpToCart<DIM>(pBox.min(),pxc,pH);
+		    auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
+
+	       
+
+		    //pull those physical coordinates back to the interpolation-coordinates of node
+		    box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
+		    box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
+
 		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 		    for(size_t el : p_grid.activeCones() ) {			
@@ -335,6 +338,8 @@ public:
 		    }
 		}
 
+
+		//std::cout<<"box="<<box<<std::endl;
 		ChebychevInterpolation::ConeDomain<DIM> domain(N_for_H(H),box);
 
 		//now we need to do the whole thing again to figure out which cones are active...
@@ -346,7 +351,7 @@ public:
 		    for(int i=iR.first;i<iR.second;i++)
 		    {
 			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);			  
-
+			
 			auto coneId=domain.elementForPoint(s);
 			is_cone_active[coneId]=true;
 		    }
@@ -356,10 +361,12 @@ public:
 		{
 		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
+
 		    for(size_t el : p_grid.activeCones() ) {			
 		    	for (size_t i=0;i<chebNodes.cols();i++) {
-			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);			    
-			    auto coneId=domain.elementForPoint(pnt);
+			    auto cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);
+			    auto interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
+			    auto coneId=domain.elementForPoint(interp_pnt);
 			    is_cone_active[coneId]=true;
 			}
 		    }

@@ -106,7 +106,8 @@ public:
 	    const auto b=0.5*(bbox.max()+bbox.min()).array();
 
 	    tmp.col(j)=pnts.col(j).array()*a+b;
-	    //assert(bbox.contains(tmp.col(j)));
+
+	    assert(bbox.exteriorDistance(tmp.col(j))<1e-14);
 	}
 
 	
@@ -124,14 +125,14 @@ public:
 
 	for(size_t j=0;j<pnts.cols();j++)
 	{	    
-	    //assert(bbox.squaredExteriorDistance(pnts.col(j))/pnts.col(j).norm()<1e-12);
+	    assert(bbox.squaredExteriorDistance(pnts.col(j))<1e-12);
 	    const auto a=0.5*(bbox.max()-bbox.min()).array();
 	    const auto b=0.5*(bbox.max()+bbox.min()).array();
 	    
 	    tmp.col(j)=(pnts.col(j).array()-b)/a;
 
 	    
-	    //assert(-1-1e-8<=tmp.col(j)[0] && tmp.col(j)[0]<=1+1e-8);
+	    assert(-1-1e-8<=tmp.col(j)[0] && tmp.col(j)[0]<=1+1e-8);
 	    //assert(-1-1e-8<=tmp.col(j)[1] && tmp.col(j)[1]<=1+1e-8);
 	}
 	
@@ -162,10 +163,10 @@ public:
     {
 	size_t idx=0;
 	int stride=1;
-	//std::cout<<"dom:"<<m_domain.min().transpose()<<" "<<m_domain.max().transpose()<<std::endl;
+	//std::cout<<"dom:"<<m_domain<<std::endl;
 	//std::cout<<m_numEls<<std::endl;
 	//std::cout<<"pn"<<pnt.transpose()<<std::endl;
-	//assert(m_domain.squaredExteriorDistance(pnt)<1e-4);
+	assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
 	for(int j=0;j<DIM;j++) {	    
 	    const double q=(pnt[j]-m_domain.min()[j])*m_numEls[j]/m_domain.diagonal()[j];
 	    
@@ -391,7 +392,7 @@ inline void unroll(auto foo)
     }
 }
 
-#define NUM_SPECIALIZATIONS  (unsigned int) 30
+#define NUM_SPECIALIZATIONS  (unsigned int) 26
 #define SHRINKING_FACTOR (unsigned int) 1
 template <typename T, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,

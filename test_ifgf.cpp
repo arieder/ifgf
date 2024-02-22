@@ -94,7 +94,7 @@ public:
     inline unsigned int orderForBox(double H, unsigned int baseOrder)
     {
 	
-        const int order = baseOrder ;//+  std::max(round(log(abs(k) * 2*H) / log(2)), 0.0);	
+        const int order = baseOrder +  std::max(round(log(abs(k) * 2*H) / log(2)), 0.0);	
         return order;
     }
 
@@ -114,7 +114,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    MyIfgfOperator op(100,25);
+    MyIfgfOperator op(100,15);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());

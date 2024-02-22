@@ -18,10 +18,10 @@ class IfgfOperator
 public:
     typedef Eigen::Matrix<double, DIM, Eigen::Dynamic, Eigen::RowMajor> PointArray;
 
-    IfgfOperator(const int maxLeafSize = 100, const int order=4)
+    IfgfOperator(const int maxLeafSize = 100, const int order=15)
     {
         m_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
-	m_base_n_elements[0]=2;
+	m_base_n_elements[0]=1;
 	m_base_n_elements[1]=4;
 
 	if constexpr (DIM==3) {
@@ -235,6 +235,8 @@ public:
             }
 
             std::cout << "step 3" << std::endl;
+	    if(level<=2) //we dont need the interpolation info for those levels.
+		continue; 
 	    
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
             [&](tbb::blocked_range<size_t> r) {

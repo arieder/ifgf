@@ -88,4 +88,10 @@ public:
     */
 };
 
+template<size_t DIM>
+std::ostream & operator<<(std::ostream &os, const BoundingBox<DIM>& p)
+{
+    return os << p.min().transpose()<<" "<<p.max().transpose();
+}
+
 #endif

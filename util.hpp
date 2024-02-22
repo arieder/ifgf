@@ -69,6 +69,8 @@ Eigen::Matrix<T, DIM, Eigen::Dynamic> copy_with_inverse_permutation(const Eigen:
 	const double  r=H/(p[0]);
 	p[0]=r;
 	auto px=sphericalToCart<DIM>(p,xc,H);
+
+	
 	
 	return px;
     }
@@ -117,6 +119,7 @@ Eigen::Matrix<T, DIM, Eigen::Dynamic> copy_with_inverse_permutation(const Eigen:
     {
 	auto ps=cartToSpherical<DIM>(p,xc,H);
 	ps[0]=H/ps[0];
+		
 
 	//auto ps2=cartToSpherical<DIM>(ps,xc,H);
 
