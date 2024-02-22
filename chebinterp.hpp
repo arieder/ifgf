@@ -392,7 +392,7 @@ inline void unroll(auto foo)
     }
 }
 
-#define NUM_SPECIALIZATIONS  (unsigned int) 26
+#define NUM_SPECIALIZATIONS  (unsigned int) 30
 #define SHRINKING_FACTOR (unsigned int) 1
 template <typename T, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,

@@ -242,7 +242,7 @@ public:
         m_root = buildOctreeNode(0, std::make_pair(0, m_srcs.cols()), std::make_pair(0, m_targets.cols()), bbox);
 	m_depth=m_levels;
 	//We are now left with a sparse octree. Our algorithms require it to be balanced, so we refine some more up to the finished depth
-	//fillupOctree(m_root);
+	fillupOctree(m_root);
 	
         std::cout << "building the nodes up to level"<<m_depth << std::endl;
         
@@ -323,7 +323,6 @@ public:
 		    auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
 
 	       
-
 		    //pull those physical coordinates back to the interpolation-coordinates of node
 		    box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
 		    box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
@@ -338,13 +337,16 @@ public:
 		    }
 		}
 
-
+		
 		//std::cout<<"box="<<box<<std::endl;
 		ChebychevInterpolation::ConeDomain<DIM> domain(N_for_H(H),box);
 
 		//now we need to do the whole thing again to figure out which cones are active...
 		std::vector<bool> is_cone_active(domain.n_elements());
 		std::fill(is_cone_active.begin(),is_cone_active.end(),false);
+		/*for (int i=0;i<domain.n_elements();i++) {
+		    assert(is_cone_active[i]==0);
+		    }*/
 		
 		for(const IndexRange& iR : cT)
 		{				    
@@ -384,6 +386,7 @@ public:
 		    
 		}
 
+		//std::cout<<"active="<<(100*active_cones.size())/domain.n_elements()<<std::endl;
 		domain.setActiveCones(active_cones);
 		domain.setConeMap(cone_map);
 

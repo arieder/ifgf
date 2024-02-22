@@ -16,7 +16,7 @@ template<typename T, unsigned int DIM, typename Derived>
 class IfgfOperator
 {
 public:
-    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic, Eigen::RowMajor> PointArray;
+    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic, Eigen::RowMajor> PointArray;    
 
     IfgfOperator(const int maxLeafSize = 100, const int order=15)
     {
@@ -56,6 +56,10 @@ public:
 
     Eigen::Vector<T, Eigen::Dynamic> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
+	//tbb::global_control control(
+	//	tbb::global_control::max_allowed_parallelism, 1);
+
+	
         unsigned int baseOrder = m_baseOrder;       
 	Eigen::Vector<size_t,DIM> n_el=m_base_n_elements;
 
