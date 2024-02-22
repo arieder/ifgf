@@ -4,7 +4,7 @@
 #include <Eigen/Dense>
 #include "octree.hpp"
 #include "chebinterp.hpp"
-#include <tbb/spin_mutex.h>
+#include <tbb/queuing_mutex.h>
 #include <tbb/parallel_for.h>
 
 //#define CHECK_CONNECTIVITY
@@ -57,7 +57,7 @@ public:
     Eigen::Vector<T, Eigen::Dynamic> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
 	//tbb::global_control control(
-	//	tbb::global_control::max_allowed_parallelism, 1);
+	//			    tbb::global_control::max_allowed_parallelism, 8);
 
 	
         unsigned int baseOrder = m_baseOrder;       
@@ -78,8 +78,8 @@ public:
 	std::cout<<"now go"<<std::endl;
 
 
-        tbb::spin_mutex resultMutex;
-        tbb::spin_mutex interpDataMutex;
+        tbb::queuing_mutex resultMutex;
+
 
 
 #ifdef CHECK_CONNECTIVITY
@@ -139,7 +139,7 @@ public:
                     ->evaluateKernel(m_octree->sourcePoints(srcs), m_octree->targetPoints(targets), new_weights.segment(srcs.first, nS),  tmp_result);
 
                     {
-                        tbb::spin_mutex::scoped_lock lock(resultMutex);
+                        tbb::queuing_mutex::scoped_lock lock(resultMutex);
                         result.segment(targets.first, nT) += tmp_result;
                     }
 
@@ -161,7 +161,6 @@ public:
 		    //std::cout<<"mem"<<memId;
 		    const size_t el=interpolationData[i].grid.activeCones()[memId];
 		    
-		    //std::cout<<"el"<<el<<std::endl;
 		    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
 		    interpolationData[i].values.segment(memId*stride,stride) =
 			static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), center, H);
@@ -173,8 +172,7 @@ public:
         for (; level >= 2; --level) {
             std::cout << "level=" << level << std::endl;
             interpolationData.resize(m_octree->numBoxes(level));
-
-            assert(interpolationData.size() == m_octree->numBoxes(level));
+            
             //evaluate for the cousin targets using the interpolated data
             std::cout << "step 1" << std::endl;
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
@@ -202,12 +200,12 @@ public:
                         }
 #endif
                         tmp_result.resize(nT);
-			//std::cout<<"eval"<<std::endl;
+			
                         evaluateFromInterp(interpolationData[i], m_octree->targetPoints(cousinTargets[l]), center, H,
                                            tmp_result);
 
                         {
-                            tbb::spin_mutex::scoped_lock lock(resultMutex);
+                            tbb::queuing_mutex::scoped_lock lock(resultMutex);
                             result.segment(cousinTargets[l].first, nT) += tmp_result;
                         }
                     }
@@ -220,7 +218,12 @@ public:
             //Now transform the interpolation data to the parents
 
             parentInterpolationData.resize(m_octree->numBoxes(level - 1));
+	    std::vector<tbb::queuing_mutex> interpDataMutex(m_octree->numBoxes(level - 1));
             for (int pId = 0; pId < parentInterpolationData.size(); pId++) {
+		if (!m_octree->hasSources(level-1, pId)) {
+                        continue;
+		}
+
                 BoundingBox bbox = m_octree->bbox(level - 1, pId);
 		//std::cout<<"bbox="<<bbox.min().transpose()<<" "<<bbox.max().transpose()<<std::endl;
                 auto center = bbox.center();
@@ -237,21 +240,24 @@ public:
 		//std::cout<<"Interpolation"<<order<<std::endl;
 
             }
+	    
 
             std::cout << "step 3" << std::endl;
 	    if(level<=2) //we dont need the interpolation info for those levels.
 		continue; 
 	    
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level),32),
             [&](tbb::blocked_range<size_t> r) {
                 PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
                 PointArray transformedNodes(DIM, chebNodes.cols());
                 Eigen::Vector<T, Eigen::Dynamic> tmpInterpolationData;
                 int old_p_order = -1;
+		int skipped=0;
                 for (size_t i = r.begin(); i < r.end(); i++)
                     //            for(size_t i=0;i<m_octree->numBoxes(level);i++)
                 {
                     if (!m_octree->hasSources(level, i)) {
+			//skipped++;
                         continue;
                     }
                     //current node
@@ -310,10 +316,11 @@ public:
                     interpolationData[i].values.resize(0);
                     {
                         assert(parentInterpolationData[parentId].values.size() == tmpInterpolationData.size());
-                        tbb::spin_mutex::scoped_lock lock(interpDataMutex);
+                        tbb::queuing_mutex::scoped_lock lock(interpDataMutex[parentId]);
                         parentInterpolationData[parentId].values.matrix() += tmpInterpolationData;
                     }
                 }
+		//std::cout<<"skipped "<<skipped<<" boxes out of"<<r.end()-r.begin()<<std::endl;
             });
 
             std::swap(interpolationData, parentInterpolationData);
@@ -347,7 +354,7 @@ public:
 	    const size_t memId=data.grid.memId(el);
 	    
 	    transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
-	    //look if any of the following points are also in this elemnt. that way we can process them together
+	    //look if any of the following points are also in this element. that way we can process them together
 	    while(idx+nb<transformed.cols() && data.grid.elementForPoint(transformed.col(idx+nb))==el) {
 		transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
 		nb++;
@@ -382,7 +389,6 @@ public:
 	    const size_t memId=data.grid.memId(el);
 	   
 
-
 	    //std::cout<<"el="<<el<<" "<<transformed.col(idx)<<std::endl;
 	    transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
 	    //look if any of the following points are also in this elemnt. that way we can process them together
@@ -390,7 +396,7 @@ public:
 		transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));
 		nb++;
 	    }
-	    //std::cout<<"bla"<<el<<" "<<data.grid.n_elements()<<" "<<el*stride<<" "<<stride<<" "<<data.values.size()<<std::endl;
+	    //std::cout<<"bla"<<data.values.segment(memId*stride,stride)<<std::endl;
 	    ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array().middleCols(idx,nb), data.values.segment(memId*stride,stride), result.segment(idx,nb), data.order);
 	    idx+=nb;
 	}

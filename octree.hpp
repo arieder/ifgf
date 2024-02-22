@@ -29,7 +29,7 @@ public:
     {
     private:
         std::shared_ptr<OctreeNode > m_parent;
-        size_t m_id;
+        long int m_id;
         std::shared_ptr<OctreeNode> m_children[N_Children];
         std::vector<std::shared_ptr<const OctreeNode> > m_neighbors;
 
@@ -65,7 +65,7 @@ public:
             m_id = id;
         }
 
-        size_t id() const
+        long int id() const
         {
             return m_id;
         }
@@ -317,7 +317,6 @@ public:
 
 		if(!pBox.isNull())
 		{
-
 		    //transform the parents interpolation range to the physical coordinates
 		    auto cMin=Util::interpToCart<DIM>(pBox.min(),pxc,pH);
 		    auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
@@ -490,6 +489,7 @@ public:
     const std::vector<IndexRange> cousinTargets(unsigned int level, size_t i) const
     {
         std::shared_ptr<OctreeNode> node = m_nodes[level][i];
+	assert(node->id()>=0);
 	return cousinTargets(node);
     }
 
@@ -606,9 +606,17 @@ private:
 	    
 	node->setBoundingBox(bbox);
 
-	m_numBoxes[level] += 1;
-	node->setId(m_nodes[level].size());
-	m_nodes[level].push_back(node);
+
+	if(src_range.first!=src_range.first || target_range.first!=target_range.second) //we only keep non-empty nodes around
+	{
+	    m_numBoxes[level] += 1;
+	    node->setId(m_nodes[level].size());
+	
+	    m_nodes[level].push_back(node);
+	}else
+	{
+	    node->setId(-1);
+	}
 	    
 	if (level ==  m_depth) {
 	    return node;

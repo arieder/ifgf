@@ -10,11 +10,14 @@
 namespace py = pybind11;
 
 
+#include <fenv.h>
 PYBIND11_MODULE(pyifgf, m) {
     m.doc() = R"pbdoc(
         A fast library implementing the Inetpolated Factored Greens function
     )pbdoc";
 
+    
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
 
     typedef HelmholtzIfgfOperator<3> OpType;
     py::class_< OpType>(m,"HelmholtzIfgfOperator")

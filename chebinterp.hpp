@@ -3,6 +3,7 @@
 
 #include <tuple>
 
+#include <fenv.h>
 #include <Eigen/Dense>
 #include <tbb/parallel_for.h>
 #include <exception>
@@ -279,7 +280,7 @@ bool isfinite(std::complex<double> z)
 }
 
 template <typename T, int N_POINTS_AT_COMPILE_TIME, size_t n, unsigned int DIM, typename Derived1, typename Derived2>
-inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals)
+inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
 {
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> result(x.cols());
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> nom(x.cols());
@@ -289,8 +290,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     weight.fill(0);
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> exact(x.cols());
 
-
-    const auto &nodes = chebnodes1d<T, order_for_dim(n,DIM)>();
+    
 
     assert(DIM == x.rows());
     const size_t stride = std::pow(n, DIM - 1);
@@ -314,7 +314,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
             }
 
         } else {
-            auto fj = evaluate < T, N_POINTS_AT_COMPILE_TIME, n, DIM - 1 > (x.topRows(DIM - 1), vals.segment(j * stride, stride));
+            auto fj = evaluate < T, N_POINTS_AT_COMPILE_TIME, n, DIM - 1 > (x.topRows(DIM - 1), vals.segment(j * stride, stride),nodes);
 
             for (size_t l = 0; l < x.cols(); l++) {
                 if (iszero(xdiff[l])) {
@@ -343,7 +343,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
 template <typename T, size_t n, unsigned int DIM, char package, typename T1, typename T2, typename T3>
 inline int __eval(const T1  &points,
                   const T2 &interp_values,
-                  T3 &dest, size_t i, size_t n_points)
+                  T3 &dest, size_t i, size_t n_points,const Eigen::Ref<const Eigen::Vector<double, n> >& nodes)
 {
     const unsigned int packageSize = 1 << package;
     const size_t np = n_points / packageSize;
@@ -351,12 +351,12 @@ inline int __eval(const T1  &points,
 
     //std::cout<<"eval"<<packageSize<<" "<<np<<" "<<n_points<<std::endl;
     for (int j = 0; j < np; j++) {
-        dest.segment(i, packageSize) = ChebychevInterpolation::evaluate<T, packageSize, n, DIM>(points.middleCols(i, packageSize), interp_values);
+        dest.segment(i, packageSize) = ChebychevInterpolation::evaluate<T, packageSize, n, DIM>(points.middleCols(i, packageSize), interp_values,nodes);
         i += packageSize;
     }
     if constexpr(package > 0) {
         if (n_points > 0) {
-            i = __eval < T, n, DIM, package - 1 > (points, interp_values, dest, i, n_points);
+            i = __eval < T, n, DIM, package - 1 > (points, interp_values, dest, i, n_points,nodes);
         }
     }
 
@@ -364,23 +364,33 @@ inline int __eval(const T1  &points,
 
 }
 
+
 template <typename T, size_t n, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> > &interp_values,
                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > dest)
 {
+    const Eigen::Vector<double,n> nodes = chebnodes1d<double, order_for_dim(n,DIM)>();
+
+
+    //fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+
+    //dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values);
     auto partial_loop =   [&](tbb::blocked_range<size_t>(r)) {
         size_t i = r.begin();
         size_t n_points = r.end() - r.begin();
-        //We do packages of size 16, 8, 4, 2, 1
-        i = __eval<T, n, DIM, 4>(points, interp_values, dest, i, n_points);
+        //We do packages of size 4, 2, 1
+        i = __eval<T, n, DIM, 0>(points, interp_values, dest, i, n_points,nodes);
         //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
         assert(i == r.end());
-    };
+	};
 
     //tbb::parallel_for(tbb::blocked_range<size_t>(0, points.cols(), 64),
     //                 partial_loop);
     partial_loop(tbb::blocked_range<size_t>(0,points.cols()));
+
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    
 }
 
 template<auto begin, auto end>

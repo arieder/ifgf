@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.4...3.18)
 project(cmake_example)
 
+#string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast")
+add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
-include_directories(${EIGEN3_INCLUDE_DIR})
+find_package (TBB REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR} ${TBB_INCLUDE_DIR})
 
 find_package(pybind11 REQUIRED)
 pybind11_add_module(pyifgf SHARED py_ifgf.cpp )
