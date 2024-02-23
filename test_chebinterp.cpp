@@ -10,15 +10,15 @@
 int main()
 {
     const int N = 50*50;
-    const int dim = 2;
+    const int dim = 3;
 
     typedef std::complex<double> T;
     Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N)+0.01;
 
-    const double H = 0.001;
+    const double H = 0.1;
     const double k = 1;
     typedef Eigen::Vector<double, dim> Point;
-    const Point xc{0, H / 2};
+    const Point xc{0, H / 2.0, 0};
     auto kernel = [&](auto pnt) {
         //pnt[0]=r , pnt[1]=theta
         Point x;
@@ -46,7 +46,7 @@ int main()
         return kernel(Eigen::Vector2d{r,theta});
     };
 
-    const int p = 50;
+    const int p = 25;
     auto interp_nodes = ChebychevInterpolation::chebnodesNd<double, p, dim>();
 
     Eigen::Array<T, Eigen::Dynamic, 1> interp_values(interp_nodes.cols());

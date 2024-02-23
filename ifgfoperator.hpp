@@ -7,6 +7,7 @@
 #include <tbb/queuing_mutex.h>
 #include <tbb/parallel_for.h>
 
+
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
 
@@ -57,7 +58,7 @@ public:
     Eigen::Vector<T, Eigen::Dynamic> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
 	//tbb::global_control control(
-	//			    tbb::global_control::max_allowed_parallelism, 8);
+	//			    tbb::global_control::max_allowed_parallelism, 1);
 
 	
         unsigned int baseOrder = m_baseOrder;       

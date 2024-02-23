@@ -1,6 +1,7 @@
 #ifndef _CHEBINTERP_HPP_
 #define _CHEBINTERP_HPP_
 
+#include "boundingbox.hpp"
 #include <tuple>
 
 #include <fenv.h>
@@ -280,7 +281,7 @@ bool isfinite(std::complex<double> z)
 }
 
 template <typename T, int N_POINTS_AT_COMPILE_TIME, size_t n, unsigned int DIM, typename Derived1, typename Derived2>
-inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
+inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
 {
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> result(x.cols());
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> nom(x.cols());
@@ -314,7 +315,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
             }
 
         } else {
-            auto fj = evaluate < T, N_POINTS_AT_COMPILE_TIME, n, DIM - 1 > (x.topRows(DIM - 1), vals.segment(j * stride, stride),nodes);
+            auto fj = evaluate_slow < T, N_POINTS_AT_COMPILE_TIME, n, DIM - 1 > (x.topRows(DIM - 1), vals.segment(j * stride, stride),nodes);
 
             for (size_t l = 0; l < x.cols(); l++) {
                 if (iszero(xdiff[l])) {
@@ -339,6 +340,125 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
 
     return result;
 }
+
+template <typename T, int N_POINTS_AT_COMPILE_TIME, size_t n, unsigned int DIM, typename Derived1, typename Derived2>
+inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
+{
+    if constexpr(DIM!=3){
+	return evaluate_slow<T,N_POINTS_AT_COMPILE_TIME,n,DIM>(x,vals,nodes);
+    }
+    
+    Eigen::Array<T, N_POINTS_AT_COMPILE_TIME,1> result(x.cols(),1);
+
+    Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,DIM> weight(x.cols(),DIM);
+    result.fill(0);
+    weight.fill(0);
+
+    assert(DIM == x.rows());
+    assert(nodes.size()==n);
+    assert(vals.size()==pow(n,DIM));
+    Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> xdiff(x.cols(),n);
+    for(int i=0;i<x.cols();i++) {
+	xdiff.row(i)=1.0/(x(0,i)-nodes.array()+1e-16);
+    }
+    Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> ydiff(x.cols(),n);//=x.row(1).colwise()-nodes;
+    for(int i=0;i<x.cols();i++) {
+	ydiff.row(i)=1.0/(x(1,i)-nodes.array()+1e-16);
+    }
+
+    Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> zdiff(x.cols(),n);//=x.row(1).colwise()-nodes;
+    for(int i=0;i<x.cols();i++) {
+	zdiff.row(i)=1.0/(x(2,i)-nodes.array()+1e-16);
+    }
+
+
+    Eigen::Array<double,n,1> c;
+    for(size_t i=0;i<n;i++) {
+	c[i]=(i % 2==0) ? 1:-1;
+    }
+    c[0]*=0.5;
+    c[n-1]*=0.5;
+    
+    const size_t strideI = n*n;
+    const size_t strideJ = n;
+    int sign = 1;
+    for(size_t i=0;i<n;i++) {
+	//std::cout<<"i"<<i<<std::endl;
+	for(size_t j=0;j<n;j++) {
+	    //std::cout<<"j"<<j<<std::endl;
+	    const size_t idx=i*strideI+j*strideJ;
+	    //we vectorize the innermost loop. This part computes result+=\sum_{k} c[i]c[j]c[l]*vals[i,j,k]*xdiff[l,:]ydiff[j,:] zdiff[i,:]
+	    //std::cout<<"c:"<<c.rows()<<" "<<vals.segment(idx,idx+n).size()<<std::endl;
+	    const auto& nom= c[i]*c[j]*(c * vals.segment(idx,n));
+	    //std::cout<<"size="<<nom.rows()<<" "<<nom.cols()<<std::endl;
+	    //std::cout<<"bla"<<( nom.matrix().transpose() * xdiff.matrix()).cols()<<std::endl;
+	    result+=( xdiff.matrix()*nom.matrix()).array()*(zdiff.col(i) * ydiff.col(j));
+
+	    //std::cout<<"done"<<std::endl;
+		/*for(size_t l=0;l<n;l++) {
+
+
+
+		double w=wi*wj*wl;
+
+		assert(i<xdiff.cols());
+		assert(j<ydiff.cols());
+		assert(l<zdiff.cols());
+
+		const T f = vals(idx);
+
+		result += w * f / (xdiff.col(l)*ydiff.col(j)*zdiff.col(i));*/
+
+	/*if(result.hasNaN())
+	{
+	    std::cout<<"res="<<result<<std::endl;
+	    std::cout<<xdiff.col(i)<<std::endl;
+	    std::cout<<ydiff.col(i)<<std::endl;
+	    std::cout<<zdiff.col(i)<<std::endl;
+	    }*/
+	//assert(!result.hasNaN());
+	//}
+	}    
+    }
+
+    //std::cout<<"a"<<std::endl;
+    sign=1;
+    for(size_t i=0;i<nodes.size();i++)
+    {
+	double w=sign;
+	if (i == 0 || i == nodes.size()-1) {
+	    w *= 0.5;
+	}
+	
+	weight.col(0)+=w*xdiff.col(i).transpose();
+	weight.col(1)+=w*ydiff.col(i).transpose();
+        weight.col(2)+=w*zdiff.col(i).transpose();
+
+	sign*=-1;
+    }
+    //std::cout<<"b"<<std::endl;
+    
+
+    result/=(weight.col(0)*weight.col(1)*weight.col(2));
+
+    //if(result.hasNaN())
+    //    std::cout<<"res2="<<result<<std::endl;
+           
+    //find out if we had any NaN misshaps. calculate them in the slow way
+    /*for (size_t l = 0; l < x.cols(); l++) {
+        if (!isfinite(result[l])) {
+	    //std::cout<<"got a nan"<<l<<" "<<result.rows()<<" "<<x.cols()<<std::endl;
+            result.row(l) =  evaluate_slow<T,1,n,DIM>(x.col(l),vals,nodes);
+        }
+	}*/
+
+    return result;
+}
+
+
+
+
+
 
 template <typename T, size_t n, unsigned int DIM, char package, typename T1, typename T2, typename T3>
 inline int __eval(const T1  &points,
@@ -375,12 +495,13 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
 
     //fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
 
-    //dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values);
-    auto partial_loop =   [&](tbb::blocked_range<size_t>(r)) {
+    dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
+    
+    /*auto partial_loop =   [&](tbb::blocked_range<size_t>(r)) {
         size_t i = r.begin();
         size_t n_points = r.end() - r.begin();
         //We do packages of size 4, 2, 1
-        i = __eval<T, n, DIM, 0>(points, interp_values, dest, i, n_points,nodes);
+        i = __eval<T, n, DIM, 3>(points, interp_values, dest, i, n_points,nodes);
         //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
         assert(i == r.end());
 	};
@@ -388,7 +509,7 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
     //tbb::parallel_for(tbb::blocked_range<size_t>(0, points.cols(), 64),
     //                 partial_loop);
     partial_loop(tbb::blocked_range<size_t>(0,points.cols()));
-
+    */
     //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     
 }
@@ -402,7 +523,7 @@ inline void unroll(auto foo)
     }
 }
 
-#define NUM_SPECIALIZATIONS  (unsigned int) 30
+#define NUM_SPECIALIZATIONS  (unsigned int) 25
 #define SHRINKING_FACTOR (unsigned int) 1
 template <typename T, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,
@@ -414,7 +535,7 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
                                           const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> >&,
                                           Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> >) >, NUM_SPECIALIZATIONS> lut;
 
-    unroll<0, NUM_SPECIALIZATIONS>([&]<int NUM>() {
+    unroll<1, NUM_SPECIALIZATIONS>([&]<int NUM>() {
         lut[NUM] = parallel_evaluate<T,  SHRINKING_FACTOR*NUM, DIM>;
     });
 

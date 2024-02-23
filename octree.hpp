@@ -241,6 +241,8 @@ public:
 	m_depth=-1;
         m_root = buildOctreeNode(0, std::make_pair(0, m_srcs.cols()), std::make_pair(0, m_targets.cols()), bbox);
 	m_depth=m_levels;
+
+	//m_root->print();
 	//We are now left with a sparse octree. Our algorithms require it to be balanced, so we refine some more up to the finished depth
 	fillupOctree(m_root);
 	
@@ -249,7 +251,7 @@ public:
 
         buildNeighborList(m_root);
 
-        //m_root->print();
+        
     }
 
     void buildNeighborList(std::shared_ptr<OctreeNode>  node)
@@ -680,10 +682,12 @@ private:
 
     void fillupOctree(std::shared_ptr<OctreeNode > node)
     {
-	if (node->level() == m_depth) {
+	//std::cout<<"filling "<<node->id()<<std::endl;
+	if (node->level() == m_levels-1) {	   
 	    return;
 	}
 
+	
 	//if we are not in a leaf, just recurse down
 	if(!node->isLeaf()) {
 	    for (int j = 0; j < N_Children; j++) {
@@ -692,6 +696,7 @@ private:
 	}
 	else //switch to building more of the octree
 	{
+	    //std::cout<<"building"<<node->id()<<"level"<<node->level()<<std::endl;
 	    IndexRange src_range=node->srcRange();
 	    IndexRange target_range=node->targetRange();
 		
@@ -736,6 +741,7 @@ private:
 		//std::cout<<"src:"<<src_idx<<end_src<<std::endl;
 		const IndexRange src(src_idx, end_src);
 		const IndexRange target(target_idx, end_target);
+
 		node->setChild(j, buildOctreeNode(node, src, target, child_bbox, level + 1));
 
 		src_idx = end_src;
