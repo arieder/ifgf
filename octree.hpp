@@ -150,6 +150,11 @@ public:
             return m_isLeaf;
         }
 
+        bool hasSources() const
+        {            
+            return m_srcRange.first != m_srcRange.second;
+        }
+
         unsigned int level() const
         {
             return m_level;
@@ -412,6 +417,25 @@ public:
         return m_levels;
     }
 
+    size_t child(size_t level, size_t id, size_t childIndex) const
+    {
+        return m_nodes[level][id]->child(childIndex)->id();
+    }
+
+    const std::vector<size_t> activeChildren( size_t level,size_t id) const
+    {
+        const auto node=m_nodes[level][id];
+        std::vector<size_t> aC;
+        aC.reserve(N_Children);
+        for (int i=0;i<N_Children;i++) {
+            const auto child=node->child(i);
+            if(child->hasSources()) {
+                aC.push_back(child->id());
+            }
+        }
+        return aC;
+    }
+
     unsigned int numBoxes(unsigned int level) const
     {
         return m_numBoxes[level];
@@ -623,6 +647,7 @@ private:
 	if (level ==  m_depth) {
 	    return node;
 	}
+        
 
 	//std::cout<<"building node"<<src_range.first<<" to "<<src_range.second<<" and "<<target_range.first<<" to "<<target_range.second<<std::endl;
 	if( m_depth== -1 &&

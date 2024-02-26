@@ -165,9 +165,11 @@ public:
     {
 	size_t idx=0;
 	int stride=1;
-	//std::cout<<"dom:"<<m_domain<<std::endl;
+        /*if(m_domain.squaredExteriorDistance(pnt)>1e-8) {
+	std::cout<<"dom:"<<m_domain<<std::endl;
 	//std::cout<<m_numEls<<std::endl;
-	//std::cout<<"pn"<<pnt.transpose()<<std::endl;
+	std::cout<<"pn"<<pnt.transpose()<<std::endl;
+        }*/
 	assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
 	for(int j=0;j<DIM;j++) {	    
 	    const double q=(pnt[j]-m_domain.min()[j])*m_numEls[j]/m_domain.diagonal()[j];

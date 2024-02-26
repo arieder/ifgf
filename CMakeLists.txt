@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.4...3.18)
 project(cmake_example)
 
 #string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast")
-add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
+#add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
+#add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 find_package (TBB REQUIRED)
