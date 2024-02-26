@@ -24,11 +24,11 @@ public:
     IfgfOperator(const int maxLeafSize = 100, const int order=15)
     {
         m_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
-	m_base_n_elements[0]=2;
-	m_base_n_elements[1]=8;
+	m_base_n_elements[0]=1;
+	m_base_n_elements[1]=4;
 
 	if constexpr (DIM==3) {
-	    m_base_n_elements[2]=4;
+	    m_base_n_elements[2]=2;
 	}
 	m_baseOrder=order;
     }
@@ -387,7 +387,7 @@ public:
     }
 
 
-    inline void recursive_mult(size_t id ,size_t level,
+    inline void recursive_mult(long int id ,size_t level,
                                const Eigen::Ref<const Eigen::Vector<T,Eigen::Dynamic> >& weights,
                                Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> > result,
                                ChebychevInterpolation::InterpolationData<T,DIM>& parentData,
@@ -397,7 +397,7 @@ public:
     {
         //std::cout<<"recursive mult"<<level<<" "<<id<<std::endl;
         
-        if(!m_octree->hasSources(level,id))
+        if(id<0 || !m_octree->hasSources(level,id))
             return;
 
         ChebychevInterpolation::InterpolationData<T,DIM> storage;
@@ -443,7 +443,7 @@ public:
             
             for(size_t c=0;c<Octree<T,DIM>::N_Children;c++)
             {
-                const size_t c_id=m_octree->child(level,id, c);
+                const long int c_id=m_octree->child(level,id, c);		
                 recursive_mult(c_id,level+1,weights,result,storage,tmp_result,resultMutex);
             }
         }

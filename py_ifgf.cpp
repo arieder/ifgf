@@ -17,7 +17,7 @@ PYBIND11_MODULE(pyifgf, m) {
     )pbdoc";
 
     
-    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
 
     typedef HelmholtzIfgfOperator<3> OpType;
     py::class_< OpType>(m,"HelmholtzIfgfOperator")
