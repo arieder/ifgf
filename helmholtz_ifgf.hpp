@@ -78,7 +78,7 @@ public:
     inline unsigned int orderForBox(double H, unsigned int baseOrder)
     {
 	
-        const int order = baseOrder +  std::max(round(log(abs(k) * 2*H) / log(2)), 0.0);	
+        const int order = baseOrder +  std::max(round(log(abs(imag(k)) * 2.0*H/(1.0+real(k))) / log(2)), 0.0);	
         return order;
     }
 

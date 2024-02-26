@@ -25,10 +25,10 @@ public:
     {
         m_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
 	m_base_n_elements[0]=1;
-	m_base_n_elements[1]=4;
+	m_base_n_elements[1]=6;
 
 	if constexpr (DIM==3) {
-	    m_base_n_elements[2]=2;
+	    m_base_n_elements[2]=3;
 	}
 	m_baseOrder=order;
     }
