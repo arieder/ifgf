@@ -292,6 +292,7 @@ public:
 
     void calculateInterpolationRange(  std::function<size_t(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H)
     {
+	Eigen::Vector<size_t,DIM> oldN;
 	//No interpolation at the two highest levels 
 	for (size_t level=2;level<levels();level++) {
 	    //update all nodes in this level
@@ -325,27 +326,32 @@ public:
 		if(!pBox.isNull())
 		{
 		    //transform the parents interpolation range to the physical coordinates
-		    auto cMin=Util::interpToCart<DIM>(pBox.min(),pxc,pH);
-		    auto cMax=Util::interpToCart<DIM>(pBox.max(),pxc,pH);
+		    auto cMin=Util::interpToCart<DIM>(pBox.min().array(),pxc,pH);
+		    auto cMax=Util::interpToCart<DIM>(pBox.max().array(),pxc,pH);
 
 	       
 		    //pull those physical coordinates back to the interpolation-coordinates of node
 		    box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
 		    box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
 
+		    //TODO check if this is necessary
 		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 		    for(size_t el : p_grid.activeCones() ) {			
 			for (size_t i=0;i<chebNodes.cols();i++) {
-			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);
+			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
 			    box.extend(Util::cartToInterp<DIM>(pnt,xc,H));
 			}
-		    }
+		    } 
 		}
 
 		
 		//std::cout<<"box="<<box<<std::endl;
 		ChebychevInterpolation::ConeDomain<DIM> domain(N_for_H(H),box);
+		if(N_for_H(H)!=oldN) {
+		    oldN=N_for_H(H);
+		    std::cout<<"n="<<N_for_H(H).transpose()<<std::endl;
+		}
 
 		//now we need to do the whole thing again to figure out which cones are active...
 		std::vector<bool> is_cone_active(domain.n_elements());
@@ -372,7 +378,7 @@ public:
 
 		    for(size_t el : p_grid.activeCones() ) {			
 		    	for (size_t i=0;i<chebNodes.cols();i++) {
-			    auto cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)),pxc,pH);
+			    auto cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
 			    auto interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
 			    auto coneId=domain.elementForPoint(interp_pnt);
 			    is_cone_active[coneId]=true;

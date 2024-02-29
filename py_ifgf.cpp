@@ -16,12 +16,11 @@ PYBIND11_MODULE(pyifgf, m) {
         A fast library implementing the Inetpolated Factored Greens function
     )pbdoc";
 
-    
     //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
 
     typedef HelmholtzIfgfOperator<3> OpType;
     py::class_< OpType>(m,"HelmholtzIfgfOperator")
-	.def(py::init<std::complex<double>, int,size_t>())
+	.def(py::init<std::complex<double>, int,size_t,int>())
 	.def("mult", &OpType::mult)	     
 	.def("init", &OpType::init);	     
 #ifdef VERSION_INFO

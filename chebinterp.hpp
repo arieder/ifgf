@@ -12,8 +12,9 @@
 namespace ChebychevInterpolation
 {
     template< typename T, size_t n>
-inline constexpr auto chebnodes1d()
+    inline constexpr Eigen::Array<T,n,1> chebnodes1d()
 {
+    std::cout<<"new chebnodes"<<std::endl;
     /*//std::cout<<"a="<<n<<std::endl;
     Eigen::Array<T,n,1> pnts;
     //std::cout<<"b"<<std::endl;
@@ -224,8 +225,7 @@ constexpr size_t order_for_dim(size_t order, size_t DIM)
 template< typename T, size_t n1d, int DIM>
 inline Eigen::Array<T, DIM, Eigen::Dynamic>  chebnodesNd()
 {
-
-    auto nodes1d = chebnodes1d<T, order_for_dim(n1d,1) >();
+    const Eigen::Array<T,n1d,1> nodes1d = chebnodes1d<T, order_for_dim(n1d,1) >();
 
 
     if constexpr(DIM==1){
@@ -492,12 +492,18 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> > &interp_values,
                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > dest)
 {
-    const Eigen::Vector<double,n> nodes = chebnodes1d<double, order_for_dim(n,DIM)>();
+    const static Eigen::Vector<double,n> nodes = chebnodes1d<double, order_for_dim(n,DIM)>();
 
 
     //fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
 
-    dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
+    if(points.cols()==1){
+	dest=evaluate_slow < T, 1, n, DIM > (points, interp_values,nodes);
+    }else{
+	dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
+    }
+    //return evaluate_slow < T, Eigen::Dynamic, n, 0 > (x.topRows(0), tmp.segment(i * stride, stride),nodes);
+    
     
     /*auto partial_loop =   [&](tbb::blocked_range<size_t>(r)) {
         size_t i = r.begin();
@@ -526,7 +532,6 @@ inline void unroll(auto foo)
 }
 
 #define NUM_SPECIALIZATIONS  (unsigned int) 25
-#define SHRINKING_FACTOR (unsigned int) 1
 template <typename T, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> > &interp_values,
@@ -537,27 +542,49 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
                                           const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> >&,
                                           Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> >) >, NUM_SPECIALIZATIONS> lut;
 
-    unroll<1, NUM_SPECIALIZATIONS>([&]<int NUM>() {
-        lut[NUM] = parallel_evaluate<T,  SHRINKING_FACTOR*NUM, DIM>;
+    unroll<0, NUM_SPECIALIZATIONS>([&]<int NUM>() {
+        lut[NUM] = parallel_evaluate<T, NUM+1, DIM>;
     });
 
 
-    return lut[ n ](points, interp_values, dest);
+    return lut[ n-1 ](points, interp_values, dest);
 
     //return parallel_evaluate<T, 10, DIM>(points,interp_values,dest);
 }
 
 template< typename T, int DIM>
-inline Eigen::Array<T, DIM, Eigen::Dynamic>  chebnodesNdd(unsigned int n)
-{
-    static std::array<std::function<Eigen::Array<T, DIM, Eigen::Dynamic> () >, NUM_SPECIALIZATIONS> lut;
+inline const Eigen::Array<T, DIM, Eigen::Dynamic>&  chebnodesNdd(unsigned int n)
+{    
+    static std::array<Eigen::Array<T, DIM, Eigen::Dynamic>, NUM_SPECIALIZATIONS> lut {
+	chebnodesNd<T,  1, DIM>(),
+	chebnodesNd<T,  2, DIM>(),
+	chebnodesNd<T,  3, DIM>(),
+	chebnodesNd<T,  4, DIM>(),
+	chebnodesNd<T,  5, DIM>(),
+	chebnodesNd<T,  6, DIM>(),
+	chebnodesNd<T,  7, DIM>(),
+	chebnodesNd<T,  8, DIM>(),
+	chebnodesNd<T,  9, DIM>(),
+	chebnodesNd<T,  10, DIM>(),
+	chebnodesNd<T,  11, DIM>(),
+	chebnodesNd<T,  12, DIM>(),
+	chebnodesNd<T,  13, DIM>(),
+	chebnodesNd<T,  14, DIM>(),
+	chebnodesNd<T,  15, DIM>(),
+	chebnodesNd<T,  16, DIM>(),
+	chebnodesNd<T,  17, DIM>(),
+	chebnodesNd<T,  18, DIM>(),
+	chebnodesNd<T,  19, DIM>(),
+	chebnodesNd<T,  20, DIM>(),
+	chebnodesNd<T,  21, DIM>(),
+	chebnodesNd<T,  22, DIM>(),
+	chebnodesNd<T,  23, DIM>(),
+	chebnodesNd<T,  24, DIM>(),
+	chebnodesNd<T,  25, DIM>()};
+	
+    
 
-    unroll<1, NUM_SPECIALIZATIONS>([&]<int NUM>() {
-        lut[NUM] = chebnodesNd<T,  SHRINKING_FACTOR*NUM, DIM>;
-    });
-
-
-    return lut[n ]();
+    return lut[ n-1 ];
     
     //return chebnodesNd<T,10,DIM>();
 

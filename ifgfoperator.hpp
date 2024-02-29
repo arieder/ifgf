@@ -9,6 +9,9 @@
 #include <tbb/global_control.h>
 #include <tbb/enumerable_thread_specific.h>
 
+#include <fstream>
+#include <iostream>
+
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
 #define  RECURSIVE_MULT
@@ -21,15 +24,17 @@ class IfgfOperator
 public:
     typedef Eigen::Matrix<double, DIM, Eigen::Dynamic, Eigen::RowMajor> PointArray;    
 
-    IfgfOperator(const int maxLeafSize = 100, const int order=15)
+    IfgfOperator(size_t maxLeafSize = 500, size_t order=15, size_t n_elements=1)
     {
+	std::cout<<"creating new ifgf operator. n_leaf="<<maxLeafSize<<" order= "<<order<<" n_elements="<<n_elements<<std::endl;
         m_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
 	m_base_n_elements[0]=1;
-	m_base_n_elements[1]=6;
+	m_base_n_elements[1]=3;
 
 	if constexpr (DIM==3) {
-	    m_base_n_elements[2]=3;
+	    m_base_n_elements[2]=2;
 	}
+	m_base_n_elements*=n_elements;
 	m_baseOrder=order;
     }
 
@@ -46,14 +51,14 @@ public:
 
 	const double hmin=m_octree->diameter()*std::pow(0.5,m_octree->levels());
 
-	m_smin=0.1*hmin/m_octree->diameter();
-	std::cout<<"hmin="<<hmin<<" vs "<<m_smin<<std::endl;
 
         m_numTargets = targets.cols();
         m_numSrcs = srcs.cols();
 
 	std::cout<<"calculating interp range"<<std::endl;
-	m_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},[this](double H){return this->m_base_n_elements;});
+	m_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},
+					      [this](double H){return static_cast<Derived *>(this)->elementsForBox(H, this->m_baseOrder,this->m_base_n_elements);});
+
 
     }
 
@@ -61,9 +66,7 @@ public:
     Eigen::Vector<T, Eigen::Dynamic> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
 
-	
         unsigned int baseOrder = m_baseOrder;       
-	Eigen::Vector<size_t,DIM> n_el=m_base_n_elements;
 
 	std::cout<<"mult"<<baseOrder<<std::endl;
 
@@ -74,7 +77,8 @@ public:
         unsigned int level = m_octree->levels() - 1;
 
 	std::cout<<"boxes="<<m_octree->numBoxes(level)<<std::endl;
-
+	const double hmin=m_octree->diameter()*std::pow(0.5,m_octree->levels());
+	std::cout<<"base size"<<static_cast<Derived *>(this)->elementsForBox(hmin, m_baseOrder,this->m_base_n_elements).transpose()<<std::endl;
 	std::cout<<"now go"<<std::endl;
 
         tbb::queuing_mutex resultMutex;
@@ -358,9 +362,13 @@ public:
 			const size_t stride=chebNodes.cols();
 			for (int memId =0;memId<grid.activeCones().size();memId++) {
 			    const size_t el=grid.activeCones()[memId];
-			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);			
-			    transferInterp(interpolationData[i], transformedNodes, center, H, parent_center, pH, tmpInterpolationData.segment(memId*stride,stride));			
+			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);
+
+			    transferInterp(interpolationData[i], transformedNodes, center, H, parent_center, pH, tmpInterpolationData.segment(memId*stride,stride));
+			    
 			}
+			//char a;
+			//std::cin>>a;
 		    }
 #endif
 
@@ -516,7 +524,7 @@ public:
     
     }
 
-    inline void transferInterp(const ChebychevInterpolation::InterpolationData<T,DIM>& data, const Eigen::Ref<const PointArray> &targets,
+    void transferInterp(const ChebychevInterpolation::InterpolationData<T,DIM>& data, const Eigen::Ref<const PointArray> &targets,
 			       const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                                const Eigen::Ref<const Eigen::Vector<double, DIM> > &p_xc, double pH,
                                Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > result) const
@@ -528,6 +536,10 @@ public:
 	result.fill(0);
 	const size_t stride=std::pow(data.order,DIM);
 	//std::cout<<"stride"<<stride<<std::endl;
+	const auto& grid=data.grid;
+
+
+	
 	size_t idx=0;
 	while (idx<transformed.cols())
 	{
@@ -545,10 +557,10 @@ public:
 	    idx+=nb;
 	}
 	
-        for (unsigned int j = 0; j < targets.cols(); j++) {
-            const T tf = static_cast<const Derived *>(this)->transfer_factor(targets.col(j), xc, H, p_xc, pH);
-            result[j] = tf*result[j];
-        }
+
+	//result=Util::copy_with_inverse_permutation<T,1>(result.matrix(),permutation);
+	
+	static_cast<const Derived *>(this)->transfer_factor(targets, xc, H, p_xc, pH, result);	
 
     }
 
@@ -600,20 +612,20 @@ public:
         }
     }
 
-    void transformInterpToCart(const Eigen::Ref<const PointArray > &nodes,
+    inline void transformInterpToCart(const Eigen::Ref<const PointArray > &nodes,
                                Eigen::Ref<PointArray > transformed, const Eigen::Vector<double, DIM> &xc, double H) const
     {
 
-        for (int i = 0; i < nodes.cols(); i++) {
+	transformed = Util::interpToCart<DIM>(nodes.array(), xc, H);
+        /*for (int i = 0; i < nodes.cols(); i++) {
             transformed.col(i) = Util::interpToCart<DIM>(nodes.col(i), xc, H);
-        }
+	    }*/
     }
 
 private:
     std::unique_ptr<Octree<T, DIM> > m_octree;
     unsigned int m_numTargets;
     unsigned int m_numSrcs;
-    double m_smin;
     Eigen::Vector<size_t, DIM> m_base_n_elements;
     size_t m_baseOrder;
 };
