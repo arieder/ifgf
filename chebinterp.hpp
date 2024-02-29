@@ -9,6 +9,8 @@
 #include <tbb/parallel_for.h>
 #include <exception>
 
+#include "cone_domain.hpp"
+
 namespace ChebychevInterpolation
 {
     template< typename T, size_t n>
@@ -41,171 +43,6 @@ namespace ChebychevInterpolation
     //return (Eigen::Array<T, n, 1>::LinSpaced(n, 0, M_PI)).cos();
 }
     //Represents a uniform refinement of (-1,1)^d
-template<size_t DIM>
-class ConeDomain
-{
-public:
-    ConeDomain()
-    {
-
-    }
-
-    ConeDomain(Eigen::Vector<size_t, DIM> numEls, const BoundingBox<DIM>& domain) :
-	m_numEls(numEls),
-	m_domain(domain)
-    {
-    }
-
-    inline void setNElements(Eigen::Vector<size_t, DIM> numEls) {
-	m_numEls=numEls;	
-    }
-
-    inline constexpr size_t n_elements() const
-    {
-	size_t n=1;
-	for(size_t i=0;i<DIM;i++)
-	    n*=m_numEls[i];
-	return n;
-    }
-    
-
-    inline const std::vector<size_t>& activeCones() const
-    {
-	return m_activeCones;
-    }
-
-    inline void setActiveCones( std::vector<size_t>& cones)
-    {
-	m_activeCones=cones;
-    }
-
-
-    inline void setConeMap( std::vector<size_t>& cone_map)
-    {
-	m_coneMap=cone_map;
-    }
-
-
-    inline size_t memId(size_t el) const
-    {	
-	return m_coneMap[el];
-    }
-
-    
-    
-    BoundingBox<DIM> domain() const {
-	return m_domain;
-    }
-
-    //transforms from (-1,1) to K_el
-    auto transform(size_t el,const Eigen::Ref<const Eigen::Matrix<double,DIM,Eigen::Dynamic> >& pnts) const 
-    {
-	const BoundingBox bbox=region(el);
-	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
-
-	for(size_t j=0;j<pnts.cols();j++)
-	{
-	    const auto a=0.5*(bbox.max()-bbox.min()).array();
-	    const auto b=0.5*(bbox.max()+bbox.min()).array();
-
-	    tmp.col(j)=pnts.col(j).array()*a+b;
-
-	    assert(bbox.exteriorDistance(tmp.col(j))<1e-14);
-	}
-
-	
-	return tmp;
-	    
-    }
-
-
-
-    //transforms from K_el to (-1,1)
-    auto transformBackwards(size_t el,const Eigen::Ref<const Eigen::Matrix<double,DIM,Eigen::Dynamic> >& pnts) const 
-    {
-	const BoundingBox bbox=region(el);
-	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
-
-	for(size_t j=0;j<pnts.cols();j++)
-	{	    
-	    assert(bbox.squaredExteriorDistance(pnts.col(j))<1e-12);
-	    const auto a=0.5*(bbox.max()-bbox.min()).array();
-	    const auto b=0.5*(bbox.max()+bbox.min()).array();
-	    
-	    tmp.col(j)=(pnts.col(j).array()-b)/a;
-
-	    
-	    assert(-1-1e-8<=tmp.col(j)[0] && tmp.col(j)[0]<=1+1e-8);
-	    //assert(-1-1e-8<=tmp.col(j)[1] && tmp.col(j)[1]<=1+1e-8);
-	}
-	
-	return tmp;	    
-    }
-
-
-    BoundingBox<DIM> region(size_t j) const
-    {
-	auto j0=j;
-	assert(j<n_elements());
-	Eigen::Vector<double, DIM> min,max;
-        Eigen::Vector<double, DIM> h=m_domain.diagonal();
-	for(int i=0;i<DIM;i++) {
-	    const size_t idx=j % m_numEls[i];
-	    j=j / m_numEls[i];
-
-	    
-	    
-	    min[i]=m_domain.min()[i]+(idx*(h[i]/((double) m_numEls[i])));
-	    max[i]=(min[i]+(h[i]/((double) m_numEls[i])));
-	}
-
-	return BoundingBox<DIM>(min,max);
-    }
-
-    size_t elementForPoint(Eigen::Vector<double,DIM> pnt) const
-    {
-	size_t idx=0;
-	int stride=1;
-        /*if(m_domain.squaredExteriorDistance(pnt)>1e-8) {
-	std::cout<<"dom:"<<m_domain<<std::endl;
-	//std::cout<<m_numEls<<std::endl;
-	std::cout<<"pn"<<pnt.transpose()<<std::endl;
-        }*/
-	assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
-	for(int j=0;j<DIM;j++) {	    
-	    const double q=(pnt[j]-m_domain.min()[j])*m_numEls[j]/m_domain.diagonal()[j];
-	    
-	    //std::cout<<"floor"<<std::floor(q)<<std::endl;
-	    const size_t ij=static_cast<int>( std::floor(std::clamp(q,0.0, m_numEls[j]-1.0)));
-	    //std::cout<<q<<"ij "<<ij<<std::endl;
-	    idx+=ij*stride;
-	    stride*=m_numEls[j];
-	}
-	assert(idx<n_elements());
-	return idx;
-
-    }
-
-    bool isEmpty() const
-    {
-	return m_domain.isEmpty();
-    }
-private:
-    BoundingBox<DIM> m_domain;
-    Eigen::Vector<size_t, DIM> m_numEls;
-    std::vector<size_t> m_activeCones;
-    std::vector<size_t> m_coneMap;
-};
-
-    
-
-template<typename T,int DIM>
-struct InterpolationData {
-    unsigned int order;
-    ConeDomain<DIM> grid;
-    Eigen::Array<T, Eigen::Dynamic, 1> values;
-};
-
 
 
 constexpr size_t order_for_dim(size_t order, size_t DIM)
@@ -285,6 +122,7 @@ bool isfinite(std::complex<double> z)
 template <typename T, int N_POINTS_AT_COMPILE_TIME, size_t n, unsigned int DIM, typename Derived1, typename Derived2>
 inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
 {
+    std::cout<<"slow"<<std::endl;
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> result(x.cols());
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> nom(x.cols());
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> weight(x.cols());
@@ -292,7 +130,6 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::A
     nom.fill(0);
     weight.fill(0);
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> exact(x.cols());
-
     
 
     assert(DIM == x.rows());
@@ -343,6 +180,8 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::A
     return result;
 }
 
+
+    
 template <typename T, int N_POINTS_AT_COMPILE_TIME, size_t n, unsigned int DIM, typename Derived1, typename Derived2>
 inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x, const Eigen::ArrayBase<Derived2> &vals, const Eigen::Ref<const Eigen::Vector<double, n> >& nodes )
 {
@@ -360,18 +199,23 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     assert(nodes.size()==n);
     assert(vals.size()==pow(n,DIM));
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> xdiff(x.cols(),n);
-    for(int i=0;i<x.cols();i++) {
-	xdiff.row(i)=1.0/(x(0,i)-nodes.array()+1e-16);
-    }
+    xdiff=1.0/((-nodes.array()).replicate(1,n).rowwise() + x.row(0)+1e-12).transpose();
+    /*for(int i=0;i<x.cols();i++) {
+	xdiff.row(i)=1.0/(x(0,i)-nodes.array());
+	}*/
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> ydiff(x.cols(),n);//=x.row(1).colwise()-nodes;
-    for(int i=0;i<x.cols();i++) {
-	ydiff.row(i)=1.0/(x(1,i)-nodes.array()+1e-16);
-    }
+    ydiff=1.0/((-nodes.array()).replicate(1,n).rowwise() + x.row(1)+1e-12).transpose();
+    /*for(int i=0;i<x.cols();i++) {
+	ydiff.row(i)=1.0/(x(1,i)-nodes.array());
+	}*/
 
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,n> zdiff(x.cols(),n);//=x.row(1).colwise()-nodes;
-    for(int i=0;i<x.cols();i++) {
-	zdiff.row(i)=1.0/(x(2,i)-nodes.array()+1e-16);
-    }
+    zdiff=1.0/((-nodes.array()).replicate(1,n).rowwise() + x.row(2)+1e-12).transpose();
+    //zdiff=1.0/(x.row(2).replicate(n,1)-nodes.array()).transpose();
+    /*
+	for(int i=0;i<x.cols();i++) {
+	zdiff.row(i)=1.0/(x(2,i)-nodes.array());
+	}*/
 
 
     Eigen::Array<double,n,1> c;
@@ -493,15 +337,22 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > dest)
 {
     const static Eigen::Vector<double,n> nodes = chebnodes1d<double, order_for_dim(n,DIM)>();
-
-
+    
+    
     //fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
-
-    if(points.cols()==1){
-	dest=evaluate_slow < T, 1, n, DIM > (points, interp_values,nodes);
-    }else{
+    switch(points.cols()) {
+    case 1: dest=evaluate < T, 1, n, DIM > (points, interp_values,nodes); break;
+    case 2: dest=evaluate < T, 2, n, DIM > (points, interp_values,nodes); break;
+    case 3: dest=evaluate < T, 3, n, DIM > (points, interp_values,nodes); break;
+    case 4: dest=evaluate < T, 4, n, DIM > (points, interp_values,nodes); break;
+    case 5: dest=evaluate < T, 5, n, DIM > (points, interp_values,nodes); break;
+			
+    default:
 	dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
     }
+
+    //dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
+    
     //return evaluate_slow < T, Eigen::Dynamic, n, 0 > (x.topRows(0), tmp.segment(i * stride, stride),nodes);
     
     
@@ -531,7 +382,7 @@ inline void unroll(auto foo)
     }
 }
 
-#define NUM_SPECIALIZATIONS  (unsigned int) 25
+#define NUM_SPECIALIZATIONS  (unsigned int) 15
 template <typename T, unsigned int DIM>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic, Eigen::RowMajor> >  &points,
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> > &interp_values,
@@ -571,16 +422,17 @@ inline const Eigen::Array<T, DIM, Eigen::Dynamic>&  chebnodesNdd(unsigned int n)
 	chebnodesNd<T,  13, DIM>(),
 	chebnodesNd<T,  14, DIM>(),
 	chebnodesNd<T,  15, DIM>(),
-	chebnodesNd<T,  16, DIM>(),
-	chebnodesNd<T,  17, DIM>(),
-	chebnodesNd<T,  18, DIM>(),
-	chebnodesNd<T,  19, DIM>(),
-	chebnodesNd<T,  20, DIM>(),
-	chebnodesNd<T,  21, DIM>(),
-	chebnodesNd<T,  22, DIM>(),
-	chebnodesNd<T,  23, DIM>(),
-	chebnodesNd<T,  24, DIM>(),
-	chebnodesNd<T,  25, DIM>()};
+	// chebnodesNd<T,  16, DIM>(),
+	// chebnodesNd<T,  17, DIM>(),
+	// chebnodesNd<T,  18, DIM>(),
+	// chebnodesNd<T,  19, DIM>(),
+	// chebnodesNd<T,  20, DIM>(),
+	// chebnodesNd<T,  21, DIM>(),
+	// chebnodesNd<T,  22, DIM>(),
+	// chebnodesNd<T,  23, DIM>(),
+	// chebnodesNd<T,  24, DIM>(),
+	//chebnodesNd<T,  25, DIM>()
+    };
 	
     
 
@@ -589,6 +441,15 @@ inline const Eigen::Array<T, DIM, Eigen::Dynamic>&  chebnodesNdd(unsigned int n)
     //return chebnodesNd<T,10,DIM>();
 
 }
+
+    
+template<typename T,int DIM>
+struct InterpolationData {
+    unsigned int order;
+    ConeDomain<DIM> grid;
+    Eigen::Array<T, Eigen::Dynamic, 1> values;
+};
+
 
 };
 

@@ -6,9 +6,9 @@
 #include "ifgfoperator.hpp"
 #include "octree.hpp"
 
-const int dim=3;
+const int dim=2;
 
-const std::complex<double>  k = std::complex<double>(0, 10);
+const std::complex<double>  k = std::complex<double>(0, 20);
 typedef Eigen::Vector<double,dim> Point;
 std::complex<double> kernel(const Point& x, const Point& y)
 {
@@ -29,14 +29,14 @@ int main()
     
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
 
-    const int N = 1000000;
+    const int N = 100000;
 
 
     //Eigen::initParallel();
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(k,1000,15);
+    HelmholtzIfgfOperator<dim> op(k,1000,8,1);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());

@@ -36,13 +36,17 @@ public:
     {
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> d=(x.colwise()-xc).colwise().norm().array();
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp=(x.colwise()-pxc).colwise().norm().array();
-	
-
 
         //double d = (x - xc).norm();
         ///Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp = (x.colwise() - pxc).norm();
 	
         result*= Eigen::exp( -k*(d-dp) )*(dp/d);
+	/*for (size_t i=0;i<x.cols();i++) {
+	    const double d=(x-xc).norm();
+	    const double dp=(x-pxc).norm();
+	    
+	    result(i)*=std::exp(-k*(d-dp))*dp/d;
+	    }*/
     }
 
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
@@ -74,8 +78,7 @@ public:
 	    
             for (int i = 0; i < x.cols(); i++) {
                 double d = (x.col(i) - y.col(j)).norm();
-		if(!std::isfinite(d))
-		    continue;
+		
                 result[j] +=
 		    (d==0) ? 0 : weights[i] * 
 		    exp(-k * (d - dc)) * (dc) / d;

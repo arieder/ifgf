@@ -14,7 +14,7 @@
 
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
-#define  RECURSIVE_MULT
+//#define  RECURSIVE_MULT
 
 #include <memory>
 
@@ -568,12 +568,25 @@ public:
 				   const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                                    Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > result) const
     {
+
 	//std::cout<<"efromInt"<<data.order<<std::endl;
 	//sort the points into the corresponding cones
 	PointArray transformed(DIM, targets.cols());
 	transformCartToInterp(targets, transformed, xc, H);
 	const size_t stride=std::pow(data.order,DIM);
 	//std::cout<<"stride"<<stride<<std::endl;
+	/*	assert(data.order==7);
+		const static Eigen::Vector<double,7> nodes = ChebychevInterpolation::chebnodes1d<double, 7>();
+	
+	for(size_t idx=0;idx<transformed.cols();idx++) {
+	    const size_t el=data.grid.elementForPoint(transformed.col(idx));	    
+	    const size_t memId=data.grid.memId(el);
+
+	    transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
+	    result(idx)=ChebychevInterpolation::evaluate_slow<T, 1, 7, DIM>(transformed.array().col(idx), data.values.segment(memId*stride,stride),nodes)[0];
+	    const auto cf = static_cast<const Derived *>(this)->CF(targets.col(idx) - xc);
+            result[idx] *= cf;
+	}*/
 	size_t idx=0;
 	while (idx<transformed.cols())
 	{
@@ -590,7 +603,6 @@ public:
 		transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));
 		nb++;
 	    }
-	    //std::cout<<"bla"<<data.values.segment(memId*stride,stride)<<std::endl;
 	    ChebychevInterpolation::parallel_evaluate<T, DIM>(transformed.array().middleCols(idx,nb), data.values.segment(memId*stride,stride), result.segment(idx,nb), data.order);
 	    idx+=nb;
 	}
@@ -614,7 +626,7 @@ public:
 
     inline void transformInterpToCart(const Eigen::Ref<const PointArray > &nodes,
                                Eigen::Ref<PointArray > transformed, const Eigen::Vector<double, DIM> &xc, double H) const
-    {
+   { 
 
 	transformed = Util::interpToCart<DIM>(nodes.array(), xc, H);
         /*for (int i = 0; i < nodes.cols(); i++) {

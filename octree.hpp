@@ -11,6 +11,7 @@
 #include "boundingbox.hpp"
 #include "zorder_less.hpp"
 #include "chebinterp.hpp"
+#include "cone_domain.hpp"
 
 #include <tbb/spin_mutex.h>
 typedef std::pair<size_t, size_t> IndexRange;
@@ -22,7 +23,7 @@ class Octree
 
 public:
     enum {N_Children = 1 << DIM };
-    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic> PointArray;
+    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic,  Eigen::RowMajor> PointArray;
     typedef Eigen::Vector<double, DIM> Point;
 
     class OctreeNode
@@ -36,7 +37,7 @@ public:
         IndexRange m_srcRange;
         IndexRange m_targetRange;
 
-	ChebychevInterpolation::ConeDomain<DIM> m_coneDomain;
+	ConeDomain<DIM> m_coneDomain;
 	//std::map<ConeIndex,Cone> m_relevant_cones;
 
         BoundingBox<DIM> m_bbox;
@@ -108,12 +109,12 @@ public:
             m_dirty = true;
         }
 
-	void setConeDomain(const ChebychevInterpolation::ConeDomain<DIM>& domain)
+	void setConeDomain(const ConeDomain<DIM>& domain)
 	{
 	    m_coneDomain=domain;
 	}
 
-	const ChebychevInterpolation::ConeDomain<DIM>& coneDomain() const
+	const ConeDomain<DIM>& coneDomain() const
 	{
 	    return m_coneDomain;
 	}
@@ -335,7 +336,7 @@ public:
 		    box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
 
 		    //TODO check if this is necessary
-		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
+		    const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 		    for(size_t el : p_grid.activeCones() ) {			
 			for (size_t i=0;i<chebNodes.cols();i++) {
@@ -345,9 +346,13 @@ public:
 		    } 
 		}
 
+		//extend the box slighlty such that the boundary points are not used for interpolation
+		box.extend((box.min().array()-1e-06).matrix());
+		box.extend((box.max().array()+1e-06).matrix());
+
 		
 		//std::cout<<"box="<<box<<std::endl;
-		ChebychevInterpolation::ConeDomain<DIM> domain(N_for_H(H),box);
+		ConeDomain<DIM> domain(N_for_H(H),box);
 		if(N_for_H(H)!=oldN) {
 		    oldN=N_for_H(H);
 		    std::cout<<"n="<<N_for_H(H).transpose()<<std::endl;
@@ -373,7 +378,7 @@ public:
 
 		if(!pBox.isNull())
 		{
-		    const ChebychevInterpolation::ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
+		    const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 
 		    for(size_t el : p_grid.activeCones() ) {			
@@ -557,7 +562,7 @@ public:
         return m_nodes[level][i]->interpolationRange();
     }
 
-    const ChebychevInterpolation::ConeDomain<DIM> coneDomain(unsigned int level, size_t i) const
+    const ConeDomain<DIM> coneDomain(unsigned int level, size_t i) const
     {
         return m_nodes[level][i]->coneDomain();
     }
