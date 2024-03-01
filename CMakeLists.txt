@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.4...3.18)
 project(cmake_example)
 #
-string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast")
-string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -ffast-math")
-#add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast ")
+string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Ofast ")
+add_definitions(-DEIGEN_FAST_MATH -DEIGEN_DONT_PARALLELIZE  )
 #add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
 
 

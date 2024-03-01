@@ -23,7 +23,7 @@ class Octree
 
 public:
     enum {N_Children = 1 << DIM };
-    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic,  Eigen::RowMajor> PointArray;
+    typedef Eigen::Matrix<double, DIM, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double, DIM> Point;
 
     class OctreeNode
@@ -41,6 +41,7 @@ public:
 	//std::map<ConeIndex,Cone> m_relevant_cones;
 
         BoundingBox<DIM> m_bbox;
+
 
         bool m_dirty;
         bool m_isLeaf;
@@ -661,11 +662,12 @@ private:
         
 
 	//std::cout<<"building node"<<src_range.first<<" to "<<src_range.second<<" and "<<target_range.first<<" to "<<target_range.second<<std::endl;
-	if( m_depth== -1 &&
-	    src_range.second-src_range.first<=m_maxLeafSize &&
-	    target_range.second-target_range.first<=m_maxLeafSize ) {
-	    //std::cout<<"leaf"<<src_range.second-src_range.first<<std::endl;
-	    return node;
+	if( m_depth== -1)
+	{
+	    const size_t N= std::max(src_range.second-src_range.first,target_range.second-target_range.first);
+	    if( N<=m_maxLeafSize ) {
+		return node;
+	    }
 	}
 
         size_t src_idx = src_range.first;
@@ -819,6 +821,7 @@ private:
     std::vector<size_t> m_src_permutation;
     std::vector<size_t>  m_target_permutation;
     double m_diameter;
+
 };
 
 #endif

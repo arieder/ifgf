@@ -20,31 +20,45 @@ auto sort_with_permutation(ExecutionPolicy&& policy, RandomIt cbegin, RandomIt c
     return perm;
 }
 
-template <typename T, int DIM>
-Eigen::Matrix<T, DIM, Eigen::Dynamic> copy_with_permutation(const Eigen::Matrix<T, DIM, Eigen::Dynamic> &v, const std::vector<size_t> &permutation)
+template <typename T>
+typename T::PlainObject copy_with_permutation(const T &v, const std::vector<size_t> &permutation)
 {
-    Eigen::Matrix<T, DIM, Eigen::Dynamic> data(DIM, v.cols());
-    for (size_t i = 0; i < v.cols(); i++) {
-        data.col(i) = v.col(permutation[i]);
+    typename T::PlainObject data(v.rows(), v.cols());
+    if constexpr (T::ColsAtCompileTime==1) {	
+	for (size_t i = 0; i < v.rows(); i++) {	
+	    data.row(i) = v.row(permutation[i]);
+	}
+    }else{
+	for (size_t i = 0; i < v.cols(); i++) {	
+	    data.col(i) = v.col(permutation[i]);
+	}
     }
     return data;
 }
-
-template <typename T, int DIM>
-Eigen::Matrix<T, DIM, Eigen::Dynamic> copy_with_inverse_permutation(const Eigen::Matrix<T, DIM, Eigen::Dynamic> &v, const std::vector<size_t> &permutation)
+    
+template <typename T>
+typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vector<size_t> &permutation)
 {
-    Eigen::Matrix<T, DIM, Eigen::Dynamic> data(DIM, v.cols());
-    for (size_t i = 0; i < v.cols(); i++) {
-        data.col(permutation[i]) = v.col(i);
+
+    typename T::PlainObject data(v.rows(), v.cols());
+    if constexpr (T::ColsAtCompileTime==1) {
+	for (size_t i = 0; i < v.rows(); i++) {	
+	    data.row(permutation[i]) = v.row(i);
+	}
+    }else{
+	for (size_t i = 0; i < v.cols(); i++) {	
+	    data.col(permutation[i]) = v.col(i);
+	}
     }
     return data;
+
 }
 
     //assumes: p[0] in (0,1) and p[1] in (-pi,pi)
     template<size_t DIM,long int POINTS>
-    inline Eigen::Vector<double, DIM> sphericalToCart(const Eigen::Ref<const Eigen::Array<double, DIM, POINTS, Eigen::RowMajor> >& p) 
+    inline Eigen::Vector<double, DIM> sphericalToCart(const Eigen::Ref<const Eigen::Array<double, DIM, POINTS> >& p) 
     {
-        Eigen::Array<double, DIM,POINTS, Eigen::RowMajor> res(POINTS,p.cols());
+        Eigen::Array<double, DIM,POINTS> res(POINTS,p.cols());
 
         if constexpr(DIM==2) {
 	    res.row(0)= p.row(0)*Eigen::cos(p.row(1));
