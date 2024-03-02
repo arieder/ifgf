@@ -1,17 +1,17 @@
-#ifndef __HELMHOLTZ_IFGF_HPP__
-#define __HELMHOLTZ_IFGF_HPP__
+#ifndef __GRAD_HELMHOLTZ_IFGF_HPP__
+#define __GRAD_HELMHOLTZ_IFGF_HPP__
 
 #include "ifgfoperator.hpp"
 
 
 template<size_t dim >
-class HelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
-                                                  1, HelmholtzIfgfOperator<dim> >
+class GradHelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
+                                                 dim, GradHelmholtzIfgfOperator<dim> >
 {
 public:
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
-    HelmholtzIfgfOperator(std::complex<double> waveNumber,
+    GradHelmholtzIfgfOperator(std::complex<double> waveNumber,
                           size_t leafSize,
                           size_t order,
                           size_t n_elem=1):
@@ -23,7 +23,7 @@ public:
     typedef std::complex<double > T ;
 
     template<typename TX>
-    inline Eigen::Vector<T, TX::ColsAtCompileTime>  kernelFunction(TX x) const
+    inline Eigen::Array<T, dim, TX::ColsAtCompileTime>  kernelFunction(TX x) const
     {
 	Eigen::Array<typename TX::Scalar, 1, TX::ColsAtCompileTime> d2 = x.colwise().squaredNorm();
 
@@ -32,16 +32,13 @@ public:
 	const auto d=d2*invd;
 
 	const double factor=1.0/ (4.0 * M_PI);        
-        
-        return (factor*Eigen::exp(-k * d) * invd) ;
+
+        return factor*
+            (d2 > 1e-12).select( ((-1.0 / d2) * Eigen::exp(- k * d).colwise() * (k + invd).colwise() * x) ,
+                                 Eigen::Vector<T, dim>::Zero()).transpose();
     }
 
 
-    inline T kernelFunction(const Eigen::Ref< const Point >&  x) const
-    {
-        double d = x.norm();
-        return (d == 0) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
-    }
 
     template<typename TX>
     inline T CF(TX x) const
@@ -107,12 +104,13 @@ public:
         }
     }
 
-    Eigen::Vector<T, Eigen::Dynamic>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
-            const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
+    Eigen::Array<T, Eigen::Dynamic,dim>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
+                                                                const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
             const Point& xc, double H) const
     {
 
-        Eigen::Vector<T, Eigen::Dynamic> result(y.cols());
+        Eigen::Array<T, Eigen::Dynamic,dim> result(y.cols());
+
 
         result.fill(0);        
 	for (int j = 0; j < y.cols(); j++) {
@@ -121,9 +119,9 @@ public:
 	    for (int i = 0; i < x.cols(); i++) {
                 double d = (x.col(i) - y.col(j)).norm();
 		
-                result[j] +=
-		    (d==0) ? 0 : weights[i] * 
-		    exp(-k * (d - dc)) * (dc) / d;
+                result.row(j) +=
+		    (d==0) ? Eigen::Vector<T,dim>::Zeros() : weights[i] * 
+		    exp(-k * (d - dc))*dc * (-1.0 /(d*d))*(k+1.0/d)*(x.col(i)-y.col(j)).transpose();
 	    }
         }
         return result;
@@ -151,5 +149,3 @@ private:
 };
 
 #endif
-
-

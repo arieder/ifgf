@@ -6,9 +6,18 @@
 #include <tbb/global_control.h>
 
 #include "helmholtz_ifgf.hpp"
+#include "grad_helmholtz_ifgf.hpp"
 
 namespace py = pybind11;
 
+template< typename OpType,typename T>
+void addOp(auto& m)
+{
+   py::class_< OpType>(m,"HelmholtzIfgfOperator")
+	.def(py::init<T, int,size_t,int>())
+	.def("mult", &OpType::mult)	     
+	.def("init", &OpType::init);	     
+}
 
 #include <fenv.h>
 PYBIND11_MODULE(pyifgf, m) {
@@ -21,11 +30,9 @@ PYBIND11_MODULE(pyifgf, m) {
     std::cout<<"running on "<<num_threads<<" threads"<<std::endl;
     auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,   num_threads );
     */
-    typedef HelmholtzIfgfOperator<3> OpType;
-    py::class_< OpType>(m,"HelmholtzIfgfOperator")
-	.def(py::init<std::complex<double>, int,size_t,int>())
-	.def("mult", &OpType::mult)	     
-	.def("init", &OpType::init);	     
+    addOp<HelmholtzIfgfOperator<3>,std::complex<double> >(m);
+    //addOp<GradHelmholtzIfgfOperator<3>,std::complex<double> >(m);
+    
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 #else

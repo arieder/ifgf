@@ -17,7 +17,7 @@ include_directories(${EIGEN3_INCLUDE_DIR} ${TBB_INCLUDE_DIR})
 find_package(pybind11 REQUIRED)
 pybind11_add_module(pyifgf SHARED py_ifgf.cpp )
 target_link_libraries (pyifgf PRIVATE tbb)
-
+set_property(TARGET pyifgf PROPERTY CXX_STANDARD 20)
 
 # EXAMPLE_VERSION_INFO is defined by setup.py and passed into the C++ code as a
 # define (VERSION_INFO) here.

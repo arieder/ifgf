@@ -6,7 +6,7 @@
 #include "ifgfoperator.hpp"
 #include "octree.hpp"
 
-const int dim=2;
+const int dim=3;
 
 const std::complex<double>  k = std::complex<double>(0, 20);
 typedef Eigen::Vector<double,dim> Point;
@@ -36,7 +36,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(k,1000,8,1);
+    HelmholtzIfgfOperator<dim> op(k,1000,8,2);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
