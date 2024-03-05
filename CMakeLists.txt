@@ -5,7 +5,8 @@ project(cmake_example)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
 string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast ")
 string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Ofast ")
-add_definitions(-DEIGEN_FAST_MATH -DEIGEN_DONT_PARALLELIZE  )
+string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O2 ")
+add_definitions(-DEIGEN_FAST_MATH=1 -DEIGEN_DONT_PARALLELIZE  )
 #add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
 
 

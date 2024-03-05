@@ -32,25 +32,25 @@ public:
         std::shared_ptr<OctreeNode > m_parent;
         long int m_id;
         std::shared_ptr<OctreeNode> m_children[N_Children];
-        std::vector<std::shared_ptr<const OctreeNode> > m_neighbors;
+        //std::vector<std::shared_ptr<const OctreeNode> > m_neighbors;
+
+	std::vector<IndexRange> m_farTargets;
+	std::vector<IndexRange> m_nearTargets;
 
         IndexRange m_srcRange;
         IndexRange m_targetRange;
 
 	ConeDomain<DIM> m_coneDomain;
-	//std::map<ConeIndex,Cone> m_relevant_cones;
 
         BoundingBox<DIM> m_bbox;
 
 
-        bool m_dirty;
         bool m_isLeaf;
         unsigned int m_level;
     public:
 
         OctreeNode(std::shared_ptr<OctreeNode> parent, unsigned int level) :
             m_parent(parent),
-            m_dirty(false),
             m_isLeaf(true),
             m_level(level)
         {
@@ -82,15 +82,6 @@ public:
             return m_targetRange;
         }
 
-        void addNeighbor(const std::shared_ptr<const OctreeNode>   &nb)
-        {
-            m_neighbors.push_back(nb);
-        }
-
-        std::vector<std::shared_ptr<const OctreeNode> > neighbors() const
-        {
-            return m_neighbors;
-        };
 
         void setSrcRange(const IndexRange &range)
         {
@@ -105,9 +96,10 @@ public:
 
         void setChild(size_t idx, std::shared_ptr<OctreeNode> node)
         {
-            m_children[idx] = node;
-            m_isLeaf = false;
-            m_dirty = true;
+	    if(node!=0) {
+		m_children[idx] = node;
+		m_isLeaf = false;
+	    }
         }
 
 	void setConeDomain(const ConeDomain<DIM>& domain)
@@ -138,7 +130,6 @@ public:
 
         BoundingBox<DIM> boundingBox() const
         {
-            //assert(!m_dirty);
             return m_bbox;
         }
 
@@ -162,19 +153,51 @@ public:
             return m_level;
         }
 
+	bool hasTargets() const
+	{
+	    return  m_targetRange.first !=m_targetRange.second;
+	}
+
         const std::shared_ptr<const OctreeNode> parent() const
         {
             return m_parent;
         }
 
+	void addNearInteraction(const OctreeNode& target)
+	{
+	    if(target.hasTargets())
+		m_nearTargets.push_back(target.targetRange());
+	}
+	
+	void addFarInteraction(const OctreeNode& target)
+	{
+	    if(target.hasTargets())
+		m_farTargets.push_back(target.targetRange());
+	}
+
+	
+
+	const std::vector<IndexRange>& nearTargets() const
+	{
+	    return m_nearTargets;
+	}
+
+	const std::vector<IndexRange>& farTargets() const
+	{
+	    return m_farTargets;
+	}
+
+	
+	
         void print(std::string prefix = "") const
         {
             std::cout << prefix;
             std::cout << "----";
 
             std::cout << m_id << " ";
-            std::cout << "(" << m_targetRange.first << " " << m_targetRange.second << ")"; //<<std::endl;
-            std::cout << m_bbox.min().transpose() << "   " << m_bbox.max().transpose() << std::endl;
+            std::cout << "(" << m_srcRange.first << " " << m_srcRange.second << ")"; //<<std::endl;
+            //std::cout << m_bbox.min().transpose() << "   " << m_bbox.max().transpose() << std::endl;
+	    std::cout<< m_isLeaf <<std::endl;
 
             //std::cout<<"("<<m_srcRange.first<<" "<<m_srcRange.second<<")"<<std::endl;
             //std::cout<<" "<<m_bbox.min().transpose()<<" to "<<m_bbox.max().transpose()<<std::endl;
@@ -187,7 +210,7 @@ public:
                     if (m_children[i] != 0) {
                         m_children[i]->print(prefix + "    ");
                     } else {
-                        std::cout << prefix + "   ----x" << std::endl;
+                        std::cout << prefix + "    ----x" << std::endl;
                     }
                 }
             }
@@ -200,6 +223,9 @@ public:
     Octree(int maxLeafSize):
         m_maxLeafSize(maxLeafSize)
     {
+
+	double eta=(double) sqrt((double) DIM);;
+	m_isAdmissible= [eta] (const BoundingBox<DIM>& src,const BoundingBox<DIM>& target) { return target.exteriorDistance(src.center()) >= eta* src.sideLength();};
 
     }
 
@@ -249,115 +275,170 @@ public:
         m_root = buildOctreeNode(0, std::make_pair(0, m_srcs.cols()), std::make_pair(0, m_targets.cols()), bbox);
 	m_depth=m_levels;
 
-	//m_root->print();
-	//We are now left with a sparse octree. Our algorithms require it to be balanced, so we refine some more up to the finished depth
-	fillupOctree(m_root);
-	
+
         std::cout << "building the nodes up to level"<<m_depth << std::endl;
         
+	
+        buildInteractionList(m_root,m_root);
+	//m_root->print();
 
-        buildNeighborList(m_root);
-
-        
+	
     }
 
-    void buildNeighborList(std::shared_ptr<OctreeNode>  node)
+    void printInteractionList(std::shared_ptr<OctreeNode>  src) {
+	std::cout<<"interactions for "<<src->id()<<" "<<src->level()<<std::endl;
+	for( auto near : src->nearTargets()) {
+	    std::cout<<near.first<<" "<<near.second<<std::endl;
+	}
+	std::cout<<"far"<<std::endl;
+
+	for( auto far : src->farTargets()) {
+	    std::cout<<far.first<<" "<<far.second<<std::endl;
+	}
+
+		    
+    }
+
+    void buildInteractionList(std::shared_ptr<OctreeNode>  src,std::shared_ptr<OctreeNode>  target)
     {
-        //go through the parents neighbours childen and check if they touch this node
-        const std::shared_ptr<const OctreeNode >parent = node->parent();
-        if (parent == 0) {
-            node->addNeighbor(node); //we are always in our own neighborhood
-        } else {
+	if(!src || !target || !src->hasSources() || ! target->hasTargets()) {
+	    return;
+	}
 
-            for (const auto p_nb : parent->neighbors()) {
-                for (int j = 0; j < N_Children; j++) {
-                    const std::shared_ptr<const OctreeNode > neighbor = p_nb->child(j);
-                    if (neighbor && node->boundingBox().squaredExteriorDistance(neighbor->boundingBox()) <= std::numeric_limits<double>::epsilon()) {
-                        node->addNeighbor(neighbor);
-                    }
-                }
-            }
-        }
 
-        //std::cout<<"got "<<node->neighbors().size()<<" neighbors"<<std::endl;
+	//Ideally, this interaction is admissible, so we can interpolate it at this level
+	if(m_isAdmissible(src->boundingBox(),target->boundingBox())) {
+	    src->addFarInteraction(*target);
+	    return;
+	}
 
-        if (node->isLeaf()) {
-            return;
-        }
+	
+	//If both of them are leaves, we can't proceed by recursion. So let's just stop and
+	//do it the hard way	
+	if(src->isLeaf() && target->isLeaf()) {	    
+	    src->addNearInteraction(*target);
+	    return;
+	}
 
-        //now compute the neighbors of the children
-        for (int j = 0; j < N_Children; j++) {
-            buildNeighborList(node->child(j));
-        }
+	//If either src or target has children recurse down
+	if(src->isLeaf() && !target->isLeaf()) {
+	    for (int j = 0; j < N_Children; j++) {
+		buildInteractionList(src,target->child(j));
+	    }
+	    return;
+	}
 
+	if(target->isLeaf() && !src->isLeaf()) {
+	    for (int j = 0; j < N_Children; j++) {
+		buildInteractionList(src->child(j),target);
+	    }
+	    return;
+	}
+
+	//if both src and target have children, we recurse down the one with the larger bbox
+	if(src->boundingBox().sideLength() > target->boundingBox().sideLength()) {
+	    for (int j = 0; j < N_Children; j++) {
+		buildInteractionList(src->child(j),target);
+	    }
+	    return;
+	}else {
+	    for (int j = 0; j < N_Children; j++) {
+		buildInteractionList(src,target->child(j));
+	    }
+	    return;
+	}
+
+	std::cout<<"this does not happen!"<<std::endl;
+	src->print();
+	target->print();
     }
 
     void calculateInterpolationRange(  std::function<size_t(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H)
     {
+	BoundingBox<DIM> global_box;
+	global_box.min().fill(0);
+	global_box.max().fill(0);
+	
 	Eigen::Vector<size_t,DIM> oldN;
 	//No interpolation at the two highest levels 
-	for (size_t level=2;level<levels();level++) {
+	for (size_t level=0;level<levels();level++) {
 	    //update all nodes in this level
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
             for(size_t n=r.begin();n<r.end();++n) {
 		std::shared_ptr<OctreeNode> node=m_nodes[level][n];
 		BoundingBox<DIM> box;
 
+
 		//do nothing  if there are no sources
-	    	if(node==0 || node->srcRange().first==node->srcRange().second)
+		if(node==0 || node->srcRange().first==node->srcRange().second)
 		    continue;
-		
+
+
 		const Point xc=node->boundingBox().center();
 		const double H=node->boundingBox().sideLength();
-		const std::vector<IndexRange> cT=cousinTargets(node);
-
-		for(const IndexRange& iR : cT)
-		{				    
+		const std::vector<IndexRange> farTargets=node->farTargets();
+		
+		for(const IndexRange& iR : farTargets)
+		{
 		    for(int i=iR.first;i<iR.second;i++) {
+			//std::cout<<"asd"<<node->boundingBox().exteriorDistance(m_targets.col(i))<<" "<<H<<std::endl;
+			
 			const auto s=Util::cartToInterp<DIM>(m_targets.col(i),xc,H);
+			assert(s[0]<=sqrt(DIM)/DIM);
+			
 			box.extend(s); //make sure the target is in the interpolation domain
 		    }
 		}
 
-		//now also add all the parents targets
-		const BoundingBox pBox=node->parent()->interpolationRange();
-		const Point pxc=node->parent()->boundingBox().center();
-		const double pH=node->parent()->boundingBox().sideLength();
-
-
-		if(!pBox.isNull())
+		BoundingBox<DIM> pBox;
+		//now also add all the parents targets	       
+		if(node->parent() && parentHasFarTargets(node))
 		{
-		    //transform the parents interpolation range to the physical coordinates
-		    auto cMin=Util::interpToCart<DIM>(pBox.min().array(),pxc,pH);
-		    auto cMax=Util::interpToCart<DIM>(pBox.max().array(),pxc,pH);
+		    
+		    pBox=node->parent()->interpolationRange();
+		    const Point pxc=node->parent()->boundingBox().center();
+		    const double pH=node->parent()->boundingBox().sideLength();
 
-	       
-		    //pull those physical coordinates back to the interpolation-coordinates of node
-		    box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
-		    box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
 
-		    //TODO check if this is necessary
-		    const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
-		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
-		    for(size_t el : p_grid.activeCones() ) {			
-			for (size_t i=0;i<chebNodes.cols();i++) {
-			    auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
-			    box.extend(Util::cartToInterp<DIM>(pnt,xc,H));
-			}
-		    } 
+		    if(!pBox.isNull())
+		    {
+			//transform the parents interpolation range to the physical coordinates
+			auto cMin=Util::interpToCart<DIM>(pBox.min().array(),pxc,pH);
+			auto cMax=Util::interpToCart<DIM>(pBox.max().array(),pxc,pH);
+
+
+			//pull those physical coordinates back to the interpolation-coordinates of node
+			//box.extend(Util::cartToInterp<DIM>(cMin,xc,H));	
+			//box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
+
+			//TODO check if this is necessary
+			const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
+			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
+			for(size_t el : p_grid.activeCones() ) {			
+			    for (size_t i=0;i<chebNodes.cols();i++) {
+				auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
+				box.extend(Util::cartToInterp<DIM>(pnt,xc,H));
+			    }
+			} 
+		    }
 		}
 
-		//extend the box slighlty such that the boundary points are not used for interpolation
-		box.extend((box.min().array()-1e-06).matrix());
-		box.extend((box.max().array()+1e-06).matrix());
-
+		if(!box.isNull()) {
+		    //extend the box slighlty such that the boundary points are not used for interpolation
+		    box.extend((box.min().array()-1e-06).matrix());
+		    box.extend((box.max().array()+1e-06).matrix());
+		}
 		
-		//std::cout<<"box="<<box<<std::endl;
+
 		ConeDomain<DIM> domain(N_for_H(H),box);
 		if(N_for_H(H)!=oldN) {
 		    oldN=N_for_H(H);
 		    std::cout<<"n="<<N_for_H(H).transpose()<<std::endl;
+		    std::cout<<"box="<<box<<" "<<box.isNull()<<std::endl;
 		}
+
+		if(!box.isNull())
+		    global_box.extend(box);
 
 		//now we need to do the whole thing again to figure out which cones are active...
 		std::vector<bool> is_cone_active(domain.n_elements());
@@ -366,7 +447,8 @@ public:
 		    assert(is_cone_active[i]==0);
 		    }*/
 		
-		for(const IndexRange& iR : cT)
+		//now also add all the parents targets		
+		for(const IndexRange& iR : farTargets)
 		{				    
 		    for(int i=iR.first;i<iR.second;i++)
 		    {
@@ -379,6 +461,9 @@ public:
 
 		if(!pBox.isNull())
 		{
+		    const Point pxc=node->parent()->boundingBox().center();
+		    const double pH=node->parent()->boundingBox().sideLength();
+
 		    const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 
@@ -413,7 +498,8 @@ public:
 		//node->setInterpolationRange(box);
 	    }});
 	}
-    
+
+	std::cout<<"interp_domain:" <<global_box<<std::endl;
     }
 
 
@@ -429,9 +515,14 @@ public:
         return m_levels;
     }
 
-    size_t child(size_t level, size_t id, size_t childIndex) const
+    long int child(size_t level, size_t id, size_t childIndex) const
     {
-        return m_nodes[level][id]->child(childIndex)->id();
+	const auto  child=m_nodes[level][id]->child(childIndex);
+	if(child) {
+	    return m_nodes[level][id]->child(childIndex)->id();
+	}else{
+	    return -1;
+	}
     }
 
     const std::vector<size_t> activeChildren( size_t level,size_t id) const
@@ -475,12 +566,45 @@ public:
 
     const IndexRange sources(unsigned int level, size_t i) const
     {
-        std::shared_ptr<OctreeNode> node = m_nodes[level][i];
+	assert(level< m_nodes.size());
+	assert(i < m_nodes[level].size());
+	std::shared_ptr<OctreeNode> node = m_nodes[level][i];
 
         return node->srcRange();
     }
 
-    const IndexRange siblingSources(unsigned int level, size_t i) const
+    inline const std::vector<IndexRange> nearTargets(unsigned int level, size_t i) const
+    {
+        std::shared_ptr<OctreeNode> node = m_nodes[level][i];
+        return node->nearTargets();
+    }
+
+    inline const std::vector<IndexRange> farTargets(unsigned int level, size_t i) const
+    {
+        std::shared_ptr<OctreeNode> node = m_nodes[level][i];
+        return node->farTargets();
+    }
+
+    bool parentHasFarTargets(const std::shared_ptr<const OctreeNode>& node) const
+    {
+	const std::shared_ptr<const OctreeNode>& parent = node->parent();
+	if(parent) {
+	    return parent->farTargets().size()>0 || parentHasFarTargets(parent);
+	}else{
+	    return false;
+	}
+    }
+
+    bool parentHasFarTargets(unsigned int level, size_t i) const
+    {
+	const std::shared_ptr<const OctreeNode>& node = m_nodes[level][i];
+	if(node) {
+	    return parentHasFarTargets(node);
+	}
+	return false;
+    }
+
+    /*    const IndexRange siblingSources(unsigned int level, size_t i) const
     {
         std::shared_ptr<OctreeNode> node = m_nodes[level][i];
         IndexRange srcs = node->srcRange();
@@ -535,13 +659,14 @@ public:
     {        
         std::vector<IndexRange> cousins;
 
+	const double H=node->boundingBox().sideLength();
         //add some of the children of the parents neighbours
         for (auto p_nb : node->parent()->neighbors()) {
             //add all the (possible) cousins which have positive distance to the current node (i.e., not neighbors)
             for (int l = 0; l < N_Children; l++) {
                 const std::shared_ptr<const OctreeNode > cousin = p_nb->child(l);
-                if (cousin && node->boundingBox().squaredExteriorDistance(cousin->boundingBox()) > std::numeric_limits<double>::epsilon()) {
-                    //std::cout<<"cousin "<<cousin->id()<<std::endl;
+                if (cousin && node->boundingBox().squaredExteriorDistance(cousin->boundingBox())>H*H)
+		{
                     cousins.push_back(cousin->targetRange());
                 }
             }
@@ -551,7 +676,7 @@ public:
         return cousins;
 
     }
-
+    */
     const BoundingBox<DIM> bbox(unsigned int level, size_t i) const
     {
         return m_nodes[level][i]->boundingBox();
@@ -583,17 +708,29 @@ public:
         return range.first != range.second;
     }
 
+    const bool isLeaf(unsigned int level, size_t i) const
+    {
+	return m_nodes[level][i]->isLeaf();        
+    }
+
+
     void sanitize()
     {
+	Eigen::VectorXi leaf_indices(m_srcs.cols());	
+	leaf_indices.fill(0);
         for (int level = 0; level < m_levels; level++) {
             Eigen::VectorXi indices(m_srcs.cols());
-            indices.fill(0);
+	    indices=leaf_indices;            
             for (int i = 0; i < m_nodes[level].size(); i++) {
                 size_t a = m_nodes[level][i]->srcRange().first;
                 size_t b = m_nodes[level][i]->srcRange().second;
-
+		
                 for (int l = a; l < b; l++) {
                     indices[l] += 1;
+		    if(m_nodes[level][i]->isLeaf()) {
+			leaf_indices[l]+=1;
+		    }
+		    
                 }
             }
 
@@ -606,15 +743,19 @@ public:
             }
         }
 
+	leaf_indices.fill(0);
         for (int level = 0; level < m_levels; level++) {
-            Eigen::VectorXi indices(m_targets.cols());
-            indices.fill(0);
+            Eigen::VectorXi indices(m_targets.cols());	    
+            indices=leaf_indices;
             for (int i = 0; i < m_nodes[level].size(); i++) {
                 size_t a = m_nodes[level][i]->targetRange().first;
                 size_t b = m_nodes[level][i]->targetRange().second;
 
                 for (int l = a; l < b; l++) {
                     indices[l] += 1;
+		    if(m_nodes[level][i]->isLeaf()) {
+			leaf_indices[l]+=1;
+		    }
                 }
             }
 
@@ -631,6 +772,12 @@ public:
 private:
     std::shared_ptr<OctreeNode> buildOctreeNode(std::shared_ptr<OctreeNode > parent, const IndexRange &src_range, const IndexRange &target_range, const BoundingBox<DIM> &bbox, unsigned int level = 0)
     {
+	
+	if(src_range.first==src_range.second && target_range.first==target_range.second) //we only keep non-empty nodes around
+	{
+	    return 0;
+	}
+	
         if (level >= m_levels) {
             m_levels++;
             m_nodes.push_back(std::vector<std::shared_ptr<OctreeNode> >());
@@ -638,36 +785,30 @@ private:
         }
 
 	auto node = std::make_shared<OctreeNode >(parent, level);
+
+	for(size_t i=target_range.first;i<target_range.second;i++) {
+	    assert(bbox.contains(m_targets.col(i)));
+	}
+
 	
 	node->setSrcRange(src_range);
 	node->setTargetRange(target_range);
 	    
 	node->setBoundingBox(bbox);
 
-
-	if(src_range.first!=src_range.first || target_range.first!=target_range.second) //we only keep non-empty nodes around
-	{
-	    m_numBoxes[level] += 1;
-	    node->setId(m_nodes[level].size());
+	m_numBoxes[level] += 1;
+	node->setId(m_nodes[level].size());
 	
-	    m_nodes[level].push_back(node);
-	}else
-	{
-	    node->setId(-1);
-	}
-	    
-	if (level ==  m_depth) {
-	    return node;
-	}
-        
+	m_nodes[level].push_back(node);
+	
 
-	//std::cout<<"building node"<<src_range.first<<" to "<<src_range.second<<" and "<<target_range.first<<" to "<<target_range.second<<std::endl;
-	if( m_depth== -1)
-	{
-	    const size_t N= std::max(src_range.second-src_range.first,target_range.second-target_range.first);
-	    if( N<=m_maxLeafSize ) {
-		return node;
-	    }
+
+	//check how big we are. If the number of sources and targets
+	//is small enough we create a new leaf.
+	const size_t N= std::max(src_range.second-src_range.first,
+				 target_range.second-target_range.first);
+	if( N<= m_maxLeafSize ) {
+	    return node;
 	}
 
         size_t src_idx = src_range.first;
@@ -704,6 +845,7 @@ private:
                 ++end_target;
             }
 
+
             //assert(src_idx>=src_range.first && end_src <=src_range.second);
             //std::cout<<"src:"<<src_idx<<end_src<<std::endl;
             const IndexRange src(src_idx, end_src);
@@ -717,80 +859,6 @@ private:
         return node;
 
     }
-
-    void fillupOctree(std::shared_ptr<OctreeNode > node)
-    {
-	//std::cout<<"filling "<<node->id()<<std::endl;
-	if (node->level() == m_levels-1) {	   
-	    return;
-	}
-
-	
-	//if we are not in a leaf, just recurse down
-	if(!node->isLeaf()) {
-	    for (int j = 0; j < N_Children; j++) {
-		fillupOctree(node->child(j));
-	    }
-	}
-	else //switch to building more of the octree
-	{
-	    //std::cout<<"building"<<node->id()<<"level"<<node->level()<<std::endl;
-	    IndexRange src_range=node->srcRange();
-	    IndexRange target_range=node->targetRange();
-		
-	    size_t src_idx = src_range.first;
-	    size_t target_idx = target_range.first;
-
-	    BoundingBox<DIM> bbox=node->boundingBox();
-	    size_t level=node->level();
-
-	    for (int j = 0; j < N_Children; j++) {
-		Point min;
-		Point max;
-
-		//std::cout<<"finding bbox from parent"<<std::endl;
-		min = bbox.min();
-		max = bbox.max();
-
-		Eigen::Vector<double, DIM> size = 0.5d * bbox.diagonal();
-
-		//find the quadrant that the next src idx belongs to
-
-		auto tuple_idx = compute_tuple_idx(j);
-		min.array() += size.array() * tuple_idx.array();
-		max = min + size;
-
-		BoundingBox<DIM> child_bbox(min, max);
-
-		//std::cout<<"building child "<<j<<" at"<<child_bbox.min().transpose()<<" "<<child_bbox.max().transpose()<<std::endl;
-
-		size_t end_src = src_idx;
-		size_t end_target = target_idx;
-
-		while (end_src < src_range.second && child_bbox.contains(m_srcs.col(end_src))) {
-		    ++end_src;
-		}
-
-		while (end_target < target_range.second && child_bbox.contains(m_targets.col(end_target))) {
-		    ++end_target;
-		}
-
-		//assert(src_idx>=src_range.first && end_src <=src_range.second);
-		//std::cout<<"src:"<<src_idx<<end_src<<std::endl;
-		const IndexRange src(src_idx, end_src);
-		const IndexRange target(target_idx, end_target);
-
-		node->setChild(j, buildOctreeNode(node, src, target, child_bbox, level + 1));
-
-		src_idx = end_src;
-		target_idx = end_target;
-	    }
-	}
-
-
-    }
-
-
 
     inline Eigen::Vector<double, DIM> compute_tuple_idx(size_t idx) const
     {
@@ -821,6 +889,8 @@ private:
     std::vector<size_t> m_src_permutation;
     std::vector<size_t>  m_target_permutation;
     double m_diameter;
+
+    std::function<bool(const BoundingBox<DIM>&, const BoundingBox<DIM>&) > m_isAdmissible;
 
 };
 

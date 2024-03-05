@@ -25,7 +25,7 @@ PYBIND11_MODULE(pyifgf, m) {
         A fast library implementing the Inetpolated Factored Greens function
     )pbdoc";
 
-    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     /*const int num_threads= std::atoi(std::getenv("IFGF_NUM_THREADS"));
     std::cout<<"running on "<<num_threads<<" threads"<<std::endl;
     auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,   num_threads );

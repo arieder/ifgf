@@ -120,7 +120,7 @@ bool isfinite(std::complex<double> z)
     return std::isfinite(z.real()) && std::isfinite(z.imag());
 }
 
-template <typename T, int N_POINTS_AT_COMPILE_TIME, int N_AT_COMPILE_TIME, unsigned int DIM, typename Derived1, typename Derived2>
+    template <typename T, int N_POINTS_AT_COMPILE_TIME, int N_AT_COMPILE_TIME, unsigned int DIM, unsigned int DIMOUT, typename Derived1, typename Derived2>
 inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::ArrayBase<Derived1>  &x,
                                                                   const Eigen::ArrayBase<Derived2> &vals,
                                                                   const Eigen::Ref<const
@@ -160,7 +160,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::A
             }
 
         } else {
-            auto fj = evaluate_slow < T, N_POINTS_AT_COMPILE_TIME, N_AT_COMPILE_TIME, DIM - 1 > (x.topRows(DIM - 1), vals.segment(j * stride, stride),nodes,n);
+            auto fj = evaluate_slow < T, N_POINTS_AT_COMPILE_TIME, N_AT_COMPILE_TIME, DIM - 1,DIMOUT > (x.topRows(DIM - 1), vals.segment(j * stride, stride),nodes,n);
 
             for (size_t l = 0; l < x.cols(); l++) {
                 if (iszero(xdiff[l])) {
@@ -197,7 +197,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     assert(N_AT_COMPILE_TIME==-1 || n==N_AT_COMPILE_TIME);
     if constexpr(DIM!=3){
         static_assert(DIMOUT==1, "only scalar output supported at this point");
-	return evaluate_slow<T,N_POINTS_AT_COMPILE_TIME,N_AT_COMPILE_TIME,DIM>(x,vals,nodes,n);
+	return evaluate_slow<T,N_POINTS_AT_COMPILE_TIME,N_AT_COMPILE_TIME,DIM,DIMOUT>(x,vals,nodes,n);
     }
 
     assert(vals.cols()==DIMOUT);
@@ -221,14 +221,14 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,N_AT_COMPILE_TIME> xdiff(x.cols(),n);
     //xdiff=(1.0/((-nodes.array()).replicate(1,n).rowwise() + x.row(0)+1e-12).transpose()).rowwise()*c.transpose();
     for(int i=0;i<x.cols();i++) {
-	xdiff.row(i)=c*1.0/(x(0,i)-nodes.array());
+	xdiff.row(i)=c*1.0/(x(0,i)-nodes.array()+1e-12);
     }
 
 
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,N_AT_COMPILE_TIME> ydiff(x.cols(),n);//=x.row(1).colwise()-nodes;
     //ydiff=(1.0/((-nodes.array()).replicate(1,n).rowwise() + x.row(1)+1e-12).transpose()).rowwise()*c.transpose();
     for(int i=0;i<x.cols();i++) {
-	ydiff.row(i)=c*1.0/(x(1,i)-nodes.array());
+	ydiff.row(i)=c*1.0/(x(1,i)-nodes.array()+1e-12);
     }
 
     Eigen::Array<double, N_POINTS_AT_COMPILE_TIME,N_AT_COMPILE_TIME> zdiff(x.cols(),n);//=x.row(1).colwise()-nodes;
@@ -236,8 +236,8 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     //zdiff=1.0/(x.row(2).replicate(n,1)-nodes.array()).transpose();
     
     for(int i=0;i<x.cols();i++) {
-	zdiff.row(i)=c*1.0/(x(2,i)-nodes.array());
-	}
+	zdiff.row(i)=c*1.0/(x(2,i)-nodes.array()+1e-12);
+    }
 
     //Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> tmp(x.cols(),1);
     //Eigen::Array<T, n, 1> nom(n,1);        

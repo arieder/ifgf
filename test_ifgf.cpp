@@ -8,7 +8,7 @@
 
 const int dim=3;
 
-const std::complex<double>  k = std::complex<double>(0, 20);
+const std::complex<double>  k = std::complex<double>(0, 32);
 typedef Eigen::Vector<double,dim> Point;
 std::complex<double> kernel(const Point& x, const Point& y)
 {
@@ -29,24 +29,25 @@ int main()
     
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
 
-    const int N = 100000;
+    const int N = 1000;
 
 
     //Eigen::initParallel();
-    //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
+    auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(k,1000,8,2);
+    HelmholtzIfgfOperator<dim> op(k,10,10,2);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
 
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     op.init(srcs, targets);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
     weights = Eigen::VectorXd::Random(N);
 
-    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+
     std::cout<<"mult"<<std::endl;
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> result = op.mult(weights);
     std::cout << "done multiplying" << std::endl;

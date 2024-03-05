@@ -67,7 +67,7 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
             assert(DIM==3);
 	    res.row(0)=p.row(0)*Eigen::cos(p.row(2))*Eigen::sin(p.row(1));
 	    res.row(1)=p.row(0)*Eigen::sin(p.row(2))*Eigen::sin(p.row(1));
-	    res.row(2)=p.row(0)*Eigen::cos(p.row(2));	    
+	    res.row(2)=p.row(0)*Eigen::cos(p.row(1));	    
         }
 
         return  res;

@@ -21,7 +21,7 @@ public:
     }
 
     typedef std::complex<double > T ;
-
+    /*
     template<typename TX>
     inline Eigen::Vector<T, TX::ColsAtCompileTime>  kernelFunction(TX x) const
     {
@@ -34,7 +34,7 @@ public:
 	const double factor=1.0/ (4.0 * M_PI);        
         
         return (factor*Eigen::exp(-k * d) * invd) ;
-    }
+	}*/
 
 
     inline T kernelFunction(const Eigen::Ref< const Point >&  x) const
@@ -76,21 +76,21 @@ public:
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> d2=(x.colwise()-xc).colwise().squaredNorm().array();
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp2=(x.colwise()-pxc).colwise().squaredNorm().array();
 
-	const auto invd=Eigen::rsqrt(d2);
+	/*const auto invd=Eigen::rsqrt(d2);
 
 	const auto dp=Eigen::sqrt(dp2);
-	const auto d=d2*invd;
+	const auto d=d2*invd;*/
 	
 	//double d = (x - xc).norm();
         ///Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp = (x.colwise() - pxc).norm();
 	
-        result*= Eigen::exp( -k*(d-dp) )*(dp*invd);
-	/*for (size_t i=0;i<x.cols();i++) {
-	    const double d=(x-xc).norm();
-	    const double dp=(x-pxc).norm();
+        //result*= Eigen::exp( -k*(d-dp) )*(dp*invd);
+	for (size_t i=0;i<x.cols();i++) {
+	    const double d=(x.col(i)-xc).norm();
+	    const double dp=(x.col(i)-pxc).norm();
 	    
 	    result(i)*=std::exp(-k*(d-dp))*dp/d;
-	    }*/
+	}
     }
 
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
@@ -100,10 +100,10 @@ public:
         assert(w.size() == x.cols());
 
         for (int i = 0; i < x.cols(); i++) {
-	    result+= w[i]* kernelFunction((- y).colwise()+x.col(i)).matrix();
-            /*for (int j = 0; j < y.cols(); j++) {
+	    //result+= w[i]* kernelFunction((- y).colwise()+x.col(i)).matrix();
+            for (int j = 0; j < y.cols(); j++) {
                 result[j] += w[i] * kernelFunction(x.col(i) - y.col(j));
-		}*/
+	    }
         }
     }
 
@@ -139,7 +139,8 @@ public:
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
 	const unsigned int order=orderForBox(H,baseOrder);
-	double delta=std::max( 2*abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
+	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
+	//double delta=std::max(abs(imag(k))*H/2,1.0);
 	base*=(int) ceil(delta);
 	return base;	    
     }

@@ -26,11 +26,13 @@ public:
 
     IfgfOperator(long int maxLeafSize = -1, size_t order=15, size_t n_elements=1)
     {
-	m_base_n_elements[0]=1;
-	m_base_n_elements[1]=3;
-
 	if constexpr (DIM==3) {
-	    m_base_n_elements[2]=2;
+	    m_base_n_elements[0]=1;
+	    m_base_n_elements[1]=2;
+	    m_base_n_elements[2]=4;
+	}else {
+	    m_base_n_elements[0]=1;
+	    m_base_n_elements[1]=2;
 	}
 	m_base_n_elements*=n_elements;
 
@@ -76,7 +78,7 @@ public:
         Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation (weights, m_octree->src_permutation());
         Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(m_numTargets);
         result.fill(0);
-        unsigned int level = m_octree->levels() - 1;
+        int level = m_octree->levels() - 1;
 
 	std::cout<<"boxes="<<m_octree->numBoxes(level)<<std::endl;
 	const double hmin=m_octree->diameter()*std::pow(0.5,m_octree->levels());
@@ -84,105 +86,20 @@ public:
 	std::cout<<"now go"<<std::endl;
 
         tbb::queuing_mutex resultMutex;
-#ifdef CHECK_CONNECTIVITY
-        Eigen::MatrixXi connectivity(m_numSrcs, m_numTargets);
-        connectivity.fill(0);
-#endif
-
-#ifndef RECURSIVE_MULT
-        std::vector<ChebychevInterpolation::InterpolationData<T,DIM> > interpolationData(m_octree->numBoxes(level));
-        std::vector<ChebychevInterpolation::InterpolationData<T,DIM> > parentInterpolationData;
-#endif
-
-        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
-        [&](tbb::blocked_range<size_t> r) {
-	    int oldOrder = baseOrder;
-            PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
-            PointArray transformedNodes(DIM, chebNodes.cols());
-            Eigen::Array<T, Eigen::Dynamic,DIMOUT> tmp_result;
-
-            for (size_t i = r.begin(); i < r.end(); i++)
-                //             for(size_t i=0;i<m_octree->numBoxes(level);i++)
-            {
-                IndexRange srcs = m_octree->sources(level, i);
-                const size_t nS = srcs.second - srcs.first;
-
-		if(nS==0) //skip empty boxes
-		    continue;
-
-                BoundingBox bbox = m_octree->bbox(level, i);
-                auto center = bbox.center();
-                double H = bbox.sideLength();
-
-                const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
-                if (order != oldOrder) {
-		    //std::cout<<"Interpolation"<<order<<std::endl;
-                    chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order);
-                    transformedNodes.resize(DIM, chebNodes.cols());
-                    oldOrder = order;
-                }
-
-                std::vector<IndexRange> targetList = m_octree->neighborTargets(level, i);
-
-                for (const auto &targets : targetList) {
-                    const size_t nT = targets.second - targets.first;
+	
+        tbb::enumerable_thread_specific<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > tmp_result;
+	tbb::enumerable_thread_specific<PointArray > transformedNodes;
 
 #ifdef CHECK_CONNECTIVITY
-
-                    for (int l = targets.first; l < targets.second; l++) {
-                        for (int k = srcs.first; k < srcs.second; k++) {
-                            connectivity(k, l) += 1;
-                        }
-                    }
+	std::cout<<"srcs="<<m_numSrcs<<" "<<m_numTargets<<std::endl;
+	m_connectivity.resize(m_numSrcs, m_numTargets);
+        m_connectivity.fill(0);
+	std::cout<<"done"<<std::endl;
 #endif
-
-                    //std::cout<<"srcs="<<srcs.first<<" "<<srcs.second<<" "<<new_weights.size()<<std::endl;
-                    //std::cout<<"targets="<<targets.first<<" "<<targets.second<<" "<<std::endl;
-
-                    tmp_result.resize(nT,DIMOUT);
-                    tmp_result.fill(0);
-
-                    static_cast<Derived *>(this)->evaluateKernel(
-                                     m_octree->sourcePoints(srcs),
-                                     m_octree->targetPoints(targets),
-                                     new_weights.segment(srcs.first, nS),
-                                     tmp_result);
-
-                    {
-                        tbb::queuing_mutex::scoped_lock lock(resultMutex);
-                        result.middleRows(targets.first, nT) += tmp_result;
-                    }
-
-                }
-
 #ifndef RECURSIVE_MULT
-		auto grid=m_octree->coneDomain(level,i);
-
-		//std::cout<<"grid="<<grid.domain().min().transpose()<<std::endl;
-                interpolationData[i].order = order;
-		interpolationData[i].grid=grid;
-
-		assert(chebNodes.cols()==std::pow(order,DIM));
-
-		//std::cout<<"interp"<<std::endl;
-		interpolationData[i].values.resize(grid.activeCones().size()*chebNodes.cols()),DIMOUT;		
-		const size_t stride=chebNodes.cols();
-		for (int memId =0;memId<interpolationData[i].grid.activeCones().size();memId++) {
-		    //std::cout<<"mem"<<memId;
-		    const size_t el=interpolationData[i].grid.activeCones()[memId];
-		    
-		    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
-		    interpolationData[i].values.segment(memId*stride,stride) =
-			static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), center, H);
-                        }
-#endif
-
-            }
-        });
-
-
-
-#ifdef RECURSIVE_MULT
+	std::vector<ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT> > interpolationData(m_octree->numBoxes(level));
+        std::vector<ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT> > parentInterpolationData;
+#else
         //depending on how parallell we are, we use the recursive or the iterative way of
         //iterating over all the boxes (depth first vs breath first). This saves some money
         int min_boxes=16;
@@ -204,83 +121,96 @@ public:
             parentInterpolationData;
         
 
-        tbb::enumerable_thread_specific<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > tmp_result;
-
-        if(level>2) {
-            //prepare the int data
-            for(size_t pId=0;pId<m_octree->numBoxes(level-1);pId++) {            
-                BoundingBox bbox = m_octree->bbox(level - 1, pId);
-                double H = bbox.sideLength();
-                const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
-                auto grid= m_octree->coneDomain(level-1,pId);		
-                interpolationData[pId].grid = grid;
-                interpolationData[pId].values.resize(grid.activeCones().size()*pow(order,DIM),DIMOUT);            
-                interpolationData[pId].values.fill(0);
-                interpolationData[pId].order = order;            
-            }
+	//prepare the int data
+	for(size_t pId=0;pId<m_octree->numBoxes(level-1);pId++) {
+	    if(m_octree->farTargets(level-1,pId).size()==0 && !m_octree->parentHasFarTargets(level-1,pId)) {
+		continue;
+	    }
+	    BoundingBox bbox = m_octree->bbox(level - 1, pId);
+	    double H = bbox.sideLength();
+	    const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
+	    auto grid= m_octree->coneDomain(level-1,pId);		
+	    interpolationData[pId].grid = grid;
+	    interpolationData[pId].values.resize(grid.activeCones().size()*pow(order,DIM),DIMOUT);            
+	    interpolationData[pId].values.fill(0);
+	    interpolationData[pId].order = order;                        
         }
 
-        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
         [&](tbb::blocked_range<size_t> r) {
             for(size_t id=r.begin();id<r.end();id++) {
                 recursive_mult(id, level, new_weights,result, interpolationData[m_octree->parentId(level, id)],
-                              tmp_result, resultMutex);                
+			       tmp_result.local(), resultMutex, transformedNodes.local());                
             }});
-
-        level--;
+	
+	level--;
         std::cout<<"now proceeding iteratively"<<level<<std::endl;
 #endif
 
-        for (; level >= 2; --level) {
+        for (; level >= 0; --level) {
             std::cout << "level=" << level << std::endl;
-            
-            //evaluate for the cousin targets using the interpolated data
+	    
+
             std::cout << "step 1" << std::endl;
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level)),
             [&](tbb::blocked_range<size_t> r) {
-                Eigen::Array<T, Eigen::Dynamic,DIMOUT> tmp_result;
-                for (size_t i = r.begin(); i < r.end(); i++) {
+            for (size_t i = r.begin(); i < r.end(); i++) {
+		if(!m_octree->hasSources(level,i))
+		    continue;
+		BoundingBox bbox = m_octree->bbox(level, i);
+		auto center = bbox.center();
+		double H = bbox.sideLength();
+		const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
 
-                    if(!m_octree->hasSources(level,i))
-                        continue;
+		const auto& chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
+		transformedNodes.local().resize(DIM,chebNodes.cols());;
+		
+		evaluateNearField(level,i, new_weights, result, tmp_result.local(), resultMutex,transformedNodes.local());
+#ifndef RECURSIVE_MULT
+		if(m_octree->isLeaf(level,i)) {
+		    auto grid=m_octree->coneDomain(level,i);
 
-                    BoundingBox bbox = m_octree->bbox(level, i);
-                    auto center = bbox.center();
-                    double H = bbox.sideLength();
-                    IndexRange srcs = m_octree->sources(level, i);
+		    //std::cout<<"grid="<<grid.domain().min().transpose()<<std::endl;
+		    interpolationData[i].order = order;
+		    interpolationData[i].grid=grid;
 
-                    const std::vector<IndexRange> cousinTargets = m_octree->cousinTargets(level, i);
-                    for (unsigned int l = 0; l < cousinTargets.size(); l++) {
-                        const size_t nT = cousinTargets[l].second - cousinTargets[l].first;
+		    assert(chebNodes.cols()==std::pow(order,DIM));
 
-#ifdef CHECK_CONNECTIVITY
-                        for (int q = cousinTargets[l].first; q < cousinTargets[l].second; q++) {
-                            for (int k = srcs.first; k < srcs.second; k++) {
-                                connectivity(q, k) += 1;
-                            }
-                        }
+		    IndexRange srcs=m_octree->sources(level,i);
+		    const size_t nS=srcs.second-srcs.first;
+
+		    //std::cout<<"interp"<<std::endl;
+		    interpolationData[i].values.resize(grid.activeCones().size()*chebNodes.cols(),DIMOUT);
+
+		    const size_t stride=chebNodes.cols();
+		    for (int memId =0;memId<interpolationData[i].grid.activeCones().size();memId++) {
+			//std::cout<<"mem"<<memId;
+			const size_t el=interpolationData[i].grid.activeCones()[memId];
+
+			transformInterpToCart(grid.transform(el,chebNodes), transformedNodes.local(), center, H);
+			interpolationData[i].values.segment(memId*stride,stride) =
+			    static_cast<const Derived *>(this)
+			    ->evaluateFactoredKernel(m_octree->sourcePoints(srcs),
+						     transformedNodes.local(),
+						     new_weights.segment(srcs.first, nS), center, H);
+		    }
+		}
 #endif
-                        tmp_result.resize(nT,DIMOUT);
-			
-                        evaluateFromInterp(interpolationData[i], m_octree->targetPoints(cousinTargets[l]), center, H,
-                                           tmp_result);
+		evaluateFarField(level,i, new_weights, result, interpolationData[i], tmp_result.local(), resultMutex);
 
-                        {
-                            tbb::queuing_mutex::scoped_lock lock(resultMutex);
-                            result.middleRows(cousinTargets[l].first, nT) += tmp_result;
-                        }
-                    }
-                }
-            });
+
+            }});
             std::cout << "step 2" << std::endl;
 
-            //std::cout<<"connectivity"<<std::endl<<connectivity<<std::endl;
+            //std::cout<<"connectivity"<<std::endl<<m_connectivity<<std::endl;
 
-            //Now transform the interpolation data to the parents
-
+	    if(level==0) {
+		continue;
+	    }
+            //Now transform the interpolation data to the parents	    	
             parentInterpolationData.resize(m_octree->numBoxes(level - 1));
 	    std::vector<tbb::queuing_mutex> interpDataMutex(m_octree->numBoxes(level - 1));
-            for (int pId = 0; pId < parentInterpolationData.size(); pId++) {
+            for (int pId = 0; pId < parentInterpolationData.size(); pId++) {		
 		if (!m_octree->hasSources(level-1, pId)) {
                         continue;
 		}
@@ -290,7 +220,7 @@ public:
                 auto center = bbox.center();
                 double H = bbox.sideLength();
 
-                const int order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
+                const int order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
 		auto grid= m_octree->coneDomain(level-1,pId);		
 		parentInterpolationData[pId].grid = grid;
 		parentInterpolationData[pId].values.resize(grid.activeCones().size()*pow(order,DIM),DIMOUT);
@@ -304,23 +234,24 @@ public:
 	    
 
             std::cout << "step 3" << std::endl;
-	    if(level<=2) //we dont need the interpolation info for those levels.
-		continue; 
 	    
             tbb::parallel_for(tbb::blocked_range<size_t>(0, m_octree->numBoxes(level),32),
             [&](tbb::blocked_range<size_t> r) {
-                PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(baseOrder);
-                PointArray transformedNodes(DIM, chebNodes.cols());
+                PointArray chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(m_baseOrder);
                 Eigen::Vector<T, Eigen::Dynamic> tmpInterpolationData;
                 int old_p_order = -1;
 		int skipped=0;
                 for (size_t i = r.begin(); i < r.end(); i++)
-                    //            for(size_t i=0;i<m_octree->numBoxes(level);i++)
                 {
                     if (!m_octree->hasSources(level, i)) {
 			//skipped++;
                         continue;
                     }
+
+		    if(level<2 && ! m_octree->parentHasFarTargets(level, i)){ //we dont need the interpolation info for those levels.
+			continue;
+		    }
+		    
                     //current node
                     BoundingBox bbox = m_octree->bbox(level, i);
                     auto center = bbox.center();
@@ -335,7 +266,7 @@ public:
                     const int p_order = parentInterpolationData[parentId].order;
                     if (p_order != old_p_order) {
                         chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(p_order);
-                        transformedNodes.resize(DIM, chebNodes.cols());
+                        transformedNodes.local().resize(DIM, chebNodes.cols());
 
                         old_p_order = p_order;
                     }
@@ -353,7 +284,7 @@ public:
 
 			for (int memId =0;memId<grid.activeCones().size();memId++) {
 			    const size_t el=grid.activeCones()[memId];
-			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);
+			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes.local(), parent_center, pH);
 			    tmpInterpolationData.segment(memId*stride,stride) =
 				static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
 			}
@@ -367,9 +298,9 @@ public:
 			const size_t stride=chebNodes.cols();
 			for (int memId =0;memId<grid.activeCones().size();memId++) {
 			    const size_t el=grid.activeCones()[memId];
-			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, parent_center, pH);
+			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes.local(), parent_center, pH);
 
-			    transferInterp(interpolationData[i], transformedNodes, center, H, parent_center, pH, tmpInterpolationData.segment(memId*stride,stride));
+			    transferInterp(interpolationData[i], transformedNodes.local(), center, H, parent_center, pH, tmpInterpolationData.segment(memId*stride,stride));
 			    
 			}
 			//char a;
@@ -379,34 +310,140 @@ public:
 #endif
 
                     //Free the data we no longer use
-                    interpolationData[i].values.resize(0,0);
+                    interpolationData[i].values.resize(0,DIMOUT);
                     {
                         assert(parentInterpolationData[parentId].values.size() == tmpInterpolationData.size());
                         tbb::queuing_mutex::scoped_lock lock(interpDataMutex[parentId]);
                         parentInterpolationData[parentId].values.matrix() += tmpInterpolationData;
                     }
-                }
+                
 		//std::cout<<"skipped "<<skipped<<" boxes out of"<<r.end()-r.begin()<<std::endl;
-            });
+		}});
 
             std::swap(interpolationData, parentInterpolationData);
             parentInterpolationData.resize(0);
 
         }
 #ifdef CHECK_CONNECTIVITY
-        assert((connectivity.array() - 1).matrix().norm() < 1e-10);
+	if((m_connectivity.array() - 1).matrix().norm() > 1e-10) {
+	    std::cout<<m_connectivity<<std::endl;
+	}
+        assert((m_connectivity.array() - 1).matrix().norm() < 1e-10);
 #endif
         std::cout<<"done"<<std::endl;
         return Util::copy_with_inverse_permutation(result, m_octree->target_permutation());
     }
 
 
+    void evaluateNearField(size_t level,long int id,
+			  const Eigen::Ref<const Eigen::Vector<T,Eigen::Dynamic> >& weights,
+			  Eigen::Ref<Eigen::Array<T, Eigen::Dynamic,DIMOUT> > result,
+			  Eigen::Array<T, Eigen::Dynamic,DIMOUT> &tmp_result,
+			  tbb::queuing_mutex& resultMutex,
+			  PointArray &transformedNodes
+			  )
+    {
+	IndexRange srcs = m_octree->sources(level, id);
+	const size_t nS = srcs.second - srcs.first;
+
+	if(nS==0) //skip empty boxes
+	    return;
+
+	BoundingBox bbox = m_octree->bbox(level, id);
+	auto center = bbox.center();
+	double H = bbox.sideLength();
+
+	const int order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
+	const auto& chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order);
+	transformedNodes.resize(DIM, chebNodes.cols());
+	
+	std::vector<IndexRange> targetList = m_octree->nearTargets(level, id);
+
+	for (const auto &targets : targetList) {
+	    const size_t nT = targets.second - targets.first;
+#ifdef CHECK_CONNECTIVITY
+	    for (int l = targets.first; l < targets.second; l++) {
+		for (int k = srcs.first; k < srcs.second; k++) {
+		    /*if(m_connectivity(k,l)!=0) {
+			std::cout<<"near error"<<k<<" "<<l<<std::endl;
+			}*/
+		    m_connectivity(k, l) += 1;
+		}
+	    }
+#endif
+
+	    //std::cout<<"srcs="<<srcs.first<<" "<<srcs.second<<" "<<new_weights.size()<<std::endl;
+	    //std::cout<<"targets="<<targets.first<<" "<<targets.second<<" "<<std::endl;
+
+	    tmp_result.resize(nT,DIMOUT);
+	    tmp_result.fill(0);
+
+	    static_cast<Derived *>(this)->evaluateKernel(
+							 m_octree->sourcePoints(srcs),
+							 m_octree->targetPoints(targets),
+							 weights.segment(srcs.first, nS),
+							 tmp_result);
+		    
+	    {
+		tbb::queuing_mutex::scoped_lock lock(resultMutex);
+		result.middleRows(targets.first, nT) += tmp_result;
+	    }
+	    
+	}	
+    
+    }
+
+    void evaluateFarField(size_t level,long int id,
+			  const Eigen::Ref<const Eigen::Vector<T,Eigen::Dynamic> >& weights,
+			  Eigen::Ref<Eigen::Array<T, Eigen::Dynamic,DIMOUT> > result,
+			  ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& interpolationData,
+			  Eigen::Array<T, Eigen::Dynamic,DIMOUT> &tmp_result,
+			  tbb::queuing_mutex& resultMutex
+			 )
+    {
+	BoundingBox bbox = m_octree->bbox(level, id);
+        auto center = bbox.center();
+        double H = bbox.sideLength();
+        
+	//evaluate for the cousin targets using the interpolated data
+	const std::vector<IndexRange> cousinTargets = m_octree->farTargets(level, id);
+	for (unsigned int l = 0; l < cousinTargets.size(); l++) {
+	    const size_t nT = cousinTargets[l].second - cousinTargets[l].first;
+	    
+#ifdef CHECK_CONNECTIVITY
+	    IndexRange srcs=m_octree->sources(level,id);
+	    for (int q = cousinTargets[l].first; q < cousinTargets[l].second; q++) {
+		for (int k = srcs.first; k < srcs.second; k++) {
+		    /*if(m_connectivity(q,k)!=0) {
+			std::cout<<"farerror"<<q<<" "<<k<<std::endl;
+			}*/
+
+		    m_connectivity(k, q) += 1;
+		}
+	    }
+#endif
+	    tmp_result.resize(nT,DIMOUT);
+			
+	    evaluateFromInterp(interpolationData, m_octree->targetPoints(cousinTargets[l]), center, H,
+			       tmp_result);
+	    
+	    {
+		tbb::queuing_mutex::scoped_lock lock(resultMutex);
+		result.middleRows(cousinTargets[l].first, nT) += tmp_result;
+	    }
+	}  
+    }
+
+
+
+    
     inline void recursive_mult(long int id ,size_t level,
                                const Eigen::Ref<const Eigen::Vector<T,Eigen::Dynamic> >& weights,
                                Eigen::Ref<Eigen::Array<T, Eigen::Dynamic,DIMOUT> > result,
                                ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& parentData,
-                               tbb::enumerable_thread_specific<Eigen::Array<T, Eigen::Dynamic,DIMOUT> > &tmp_result,
-                               tbb::queuing_mutex& resultMutex
+                               Eigen::Array<T, Eigen::Dynamic,DIMOUT> &tmp_result,
+                               tbb::queuing_mutex& resultMutex,
+			       PointArray & transformedNodes
                                )
     {
         //std::cout<<"recursive mult"<<level<<" "<<id<<std::endl;
@@ -431,15 +468,18 @@ public:
         //std::cout<<"grid="<<grid.domain().min().transpose()<<std::endl;
         storage.order = order;
         storage.grid = grid;
-        auto chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
-        storage.values.resize(grid.activeCones().size()*chebNodes.cols(),DIMOUT);		
+        const auto& chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
+        storage.values.resize(grid.activeCones().size()*chebNodes.cols(),DIMOUT);
+
+
+	//evaluate the near field exactly
+	evaluateNearField(level,id,weights, result, tmp_result, resultMutex,transformedNodes);	
                 
-        //if we are at the leaf-level compute the interpolation data by actually interpolating the true functio
-        if(level==m_octree->levels()-1) {        
+        //if we are at the leaf-level compute the interpolation data by actually interpolating the true function
+        if(m_octree->isLeaf(level,id)) {        
             assert(chebNodes.cols()==std::pow(order,DIM));
             
             //std::cout<<"interp"<<level<<std::endl;
-            PointArray transformedNodes(DIM, chebNodes.cols());
             const size_t stride=chebNodes.cols();
             for (int memId =0;memId<grid.activeCones().size();memId++) {
                 //std::cout<<"mem"<<memId;
@@ -450,7 +490,6 @@ public:
                     static_cast<const Derived *>(this)->evaluateFactoredKernel
                     (m_octree->sourcePoints(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H);
             }
-
         }else //generate the interpolation data by evaluating the children recursively
         {
             storage.values.fill(0);
@@ -458,31 +497,15 @@ public:
             for(size_t c=0;c<Octree<T,DIM>::N_Children;c++)
             {
                 const long int c_id=m_octree->child(level,id, c);		
-                recursive_mult(c_id,level+1,weights,result,storage,tmp_result,resultMutex);
+                recursive_mult(c_id,level+1,weights,result,storage,tmp_result,resultMutex,transformedNodes);
             }
         }
 
         //Now that sthe Interpolation data storage has been prepared, we can use it to evaluate the field at the cousin nodes
-        //std::cout<<"evaluating"<<level<<std::endl;
-        const std::vector<IndexRange> cousinTargets = m_octree->cousinTargets(level, id);
-        for (unsigned int l = 0; l < cousinTargets.size(); l++) {
-            const size_t nT = cousinTargets[l].second - cousinTargets[l].first;
-            tmp_result.local().resize(nT,DIMOUT);         
-            evaluateFromInterp(storage, m_octree->targetPoints(cousinTargets[l]), center, H,
-                               tmp_result.local());
-            
-            {
-                tbb::queuing_mutex::scoped_lock lock(resultMutex);
-                result.middleRows(cousinTargets[l].first, nT) += tmp_result.local();
-            }
-        }
-
+	evaluateFarField(level,id, weights, result, storage, tmp_result, resultMutex);
 
         //propagate the interpolation data to the parent
-        //std::cout<<"propagating "<<level<<std::endl;
-        //parent node
-
-        if(level <= 2) //we won't need the intepolation data on those coarse levels
+        if(level <=2 && !m_octree->parentHasFarTargets(level,id)) //if we won't encounter any more far-fields we can stop
             return;
         
         size_t parentId = m_octree->parentId(level, id);
@@ -491,19 +514,17 @@ public:
         double pH = parent_bbox.sideLength();
         
         const int p_order = parentData.order;
-        if (p_order != order) {
-            chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(p_order);
-        }
+	const auto& p_chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(p_order);
+        
 
-        PointArray transformedNodes(DIM, chebNodes.cols());
 
         const auto& pGrid=parentData.grid;
-        const size_t stride=chebNodes.cols();
+        const size_t stride=p_chebNodes.cols();
 #ifdef TWO_GRID_ONLY              
         if(!pGrid.isEmpty()) {
             for (int memId =0;memId<pGrid.activeCones().size();memId++) {
                 const size_t el=pGrid.activeCones()[memId];
-                transformInterpToCart(pGrid.transform(el,chebNodes), transformedNodes, parent_center, pH);
+                transformInterpToCart(pGrid.transform(el,p_chebNodes), transformedNodes, parent_center, pH);
                 parentData.values.middleRows(memId*stride,stride).matrix() +=
                     static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs),
                                                                                transformedNodes,
@@ -514,25 +535,25 @@ public:
         
 #else
         if(!pGrid.isEmpty()) {
-	    transformedNodes.resize(DIM,chebNodes.cols()*pGrid.activeCones().size());
-	    tmp_result.local().resize(transformedNodes.cols(),DIMOUT);	    
-	    tmp_result.local().fill(0);
+	    transformedNodes.resize(DIM,p_chebNodes.cols()*pGrid.activeCones().size());
+	    tmp_result.resize(transformedNodes.cols(),DIMOUT);	    
+	    tmp_result.fill(0);
 
 	    size_t idx=0;
             for (int memId =0;memId<pGrid.activeCones().size();memId++) {
                 const size_t el=pGrid.activeCones()[memId];               
-                transformInterpToCart(pGrid.transform(el,chebNodes), transformedNodes.middleCols(idx,chebNodes.cols()),
+                transformInterpToCart(pGrid.transform(el,p_chebNodes), transformedNodes.middleCols(idx,p_chebNodes.cols()),
                                       parent_center, pH);
 		idx+=chebNodes.cols();
             }
 	    
 	    transferInterp(storage, transformedNodes, center, H, parent_center, pH,
-                               tmp_result.local());
+                               tmp_result);
 
 	    idx=0;
 	    for (int memId =0;memId<pGrid.activeCones().size();memId++) {
                 const size_t el=pGrid.activeCones()[memId];               
-                parentData.values.middleRows(memId*stride,stride)+=tmp_result.local().middleRows(idx,chebNodes.cols());
+                parentData.values.middleRows(memId*stride,stride)+=tmp_result.middleRows(idx,chebNodes.cols());
 		idx+=chebNodes.cols();
 	    }
         }
@@ -543,7 +564,7 @@ public:
     void transferInterp(const ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& data, const Eigen::Ref<const PointArray> &targets,
 			       const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                                const Eigen::Ref<const Eigen::Vector<double, DIM> > &p_xc, double pH,
-                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > result) const
+                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > result) const
     {
         //transform to the child interpolation domain
         PointArray transformed(DIM, targets.cols());
@@ -555,7 +576,7 @@ public:
 	const auto& grid=data.grid;
 
 	const int N=targets.cols();
-	if(false) {
+	if(true) {
 	    size_t idx=0;
 	    while (idx<N)
 	    {
@@ -737,6 +758,9 @@ private:
     unsigned int m_numSrcs;
     Eigen::Vector<size_t, DIM> m_base_n_elements;
     size_t m_baseOrder;
+#ifdef  CHECK_CONNECTIVITY
+    Eigen::MatrixXi m_connectivity;
+#endif
 };
 
 #endif
