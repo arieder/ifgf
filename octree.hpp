@@ -6,6 +6,7 @@
 #include <map>
 #include <vector>
 #include <execution>
+#include <iostream>
 
 #include "util.hpp"
 #include "boundingbox.hpp"
@@ -417,7 +418,7 @@ public:
 			for(size_t el : p_grid.activeCones() ) {			
 			    for (size_t i=0;i<chebNodes.cols();i++) {
 				auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
-				box.extend(Util::cartToInterp<DIM>(pnt,xc,H));
+				box.extend(Util::cartToInterp<DIM>(pnt,xc,H).matrix());
 			    }
 			} 
 		    }
@@ -807,6 +808,8 @@ private:
 	//is small enough we create a new leaf.
 	const size_t N= std::max(src_range.second-src_range.first,
 				 target_range.second-target_range.first);
+
+	
 	if( N<= m_maxLeafSize ) {
 	    return node;
 	}

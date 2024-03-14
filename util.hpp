@@ -132,15 +132,31 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
         }
     }
 
-    template<size_t DIM>
+
+    template<size_t DIM,typename PointVector, typename PointVector2>
+    inline typename PointVector::PlainObject cartToInterp2(const Eigen::ArrayBase<PointVector>& x, const Eigen::Vector<double, DIM> &xc, double H, PointVector2& rs)
+    {
+
+	auto p=x.colwise()-xc.array();
+
+	const Eigen::Array<double, 1,Eigen::Dynamic> a = p.row(0)*p.row(0)+p.row(1)*p.row(1);
+	rs.row(2)= p.row(0).binaryExpr(p.row(1), [](double a,double b) {return  std::atan2(b,a);});
+	rs.row(1)= p.row(2).binaryExpr(a, [](double b,double aj){return std::atan2(std::sqrt(aj),b);});
+	rs.row(0)=H/((a+p.row(2)*p.row(2)).sqrt());
+
+
+	return rs;
+    }
+    
+        template<size_t DIM>
     inline Eigen::Vector<double, DIM> cartToInterp(Eigen::Vector<double, DIM> p, const Eigen::Vector<double, DIM> &xc, double H) 
     {
 	auto ps=cartToSpherical<DIM>(p-xc);
 	ps[0]=H/ps[0];
-	
+
 
 	return ps;
-    }
+	}
     
 };
 

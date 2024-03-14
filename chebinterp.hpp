@@ -8,8 +8,10 @@
 #include <Eigen/Dense>
 #include <tbb/parallel_for.h>
 #include <exception>
+#include<iostream>
 
 #include "cone_domain.hpp"
+
 
 namespace ChebychevInterpolation
 {
@@ -131,7 +133,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::A
     //std::cout<<"slow"<<std::endl;
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> result(x.cols());
     Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> nom(x.cols());
-    Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> weight(x.cols());
+    Eigen::Array<double, N_POINTS_AT_COMPILE_TIME, 1> weight(x.cols());
     result.fill(0);
     nom.fill(0);
     weight.fill(0);
@@ -189,7 +191,7 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate_slow(const Eigen::A
 
     
     template <typename T, int N_POINTS_AT_COMPILE_TIME, int N_AT_COMPILE_TIME, unsigned int DIM, unsigned int DIMOUT, typename Derived1, typename Derived2>
-inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayBase<Derived1>  &x,
+inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, DIMOUT> evaluate(const Eigen::ArrayBase<Derived1>  &x,
                                                              const Eigen::ArrayBase<Derived2> &vals,
                                                              const Eigen::Ref<const Eigen::Vector<double, N_AT_COMPILE_TIME > >& nodes,
                                                              int n)
@@ -208,6 +210,9 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
     weight.fill(0);
 
     assert(DIM == x.rows());
+    if(nodes.size()!=n) {
+	std::cout<<"wtf?"<<nodes.size()<<" "<<n<<std::endl;
+    }
     assert(nodes.size()==n);
     assert(vals.size()==pow(n,DIM));
 
@@ -250,8 +255,10 @@ inline Eigen::Array<T, N_POINTS_AT_COMPILE_TIME, 1> evaluate(const Eigen::ArrayB
 	    const size_t idx=i*strideI+j*strideJ;
 	    //we vectorize the innermost loop. This part computes
             //result+=\sum_{k} vals[i,j,k]*xdiff[l,:]ydiff[j,:] zdiff[i,:]
-	    auto tmp=(xdiff.matrix()*vals.segment(idx,n).matrix()).array(); //nom.matrix()).array();
-	    result+=tmp*(zdiff.col(i) * ydiff.col(j));
+	    auto tmp=(xdiff.matrix()*vals.middleRows(idx,n).matrix()).array(); //nom.matrix()).array();
+	    for(int l=0;l<DIMOUT;l++) {
+		result.col(l)+=(zdiff.col(i) * ydiff.col(j))*tmp.col(l);
+	    }
 
 	    //std::cout<<"done"<<std::endl;
 		/*for(size_t l=0;l<n;l++) {
@@ -328,7 +335,13 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> > &interp_values,
                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > dest,size_t n)
 {
-    const static Eigen::Vector<double,N_AT_COMPILE_TIME> nodes = chebnodes1d<double, N_AT_COMPILE_TIME>(n);
+    static Eigen::Vector<double,N_AT_COMPILE_TIME> nodes = chebnodes1d<double, N_AT_COMPILE_TIME>(n);
+
+    if constexpr(N_AT_COMPILE_TIME==-1) {
+	if(nodes.size()!=n) {
+	    nodes=chebnodes1d<double, N_AT_COMPILE_TIME>(n);
+	}
+    }
     
     
     //fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
@@ -340,7 +353,7 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
 	//case 5: dest=evaluate < T, 5, n, DIM > (points, interp_values,nodes); break;
 			
     default:
-	dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, N_AT_COMPILE_TIME, DIM,DIMOUT>(points, interp_values,nodes,n);
+	dest=evaluate<T, Eigen::Dynamic, N_AT_COMPILE_TIME, DIM,DIMOUT>(points, interp_values,nodes,n);
     }
 
     //dest=ChebychevInterpolation::evaluate<T, Eigen::Dynamic, n, DIM>(points, interp_values,nodes);
@@ -374,13 +387,13 @@ inline void unroll(auto foo)
     }
 }
 
-#define NUM_SPECIALIZATIONS  (unsigned int) 1
+#define NUM_SPECIALIZATIONS  (unsigned int) 10
 template <typename T, unsigned int DIM, unsigned int DIMOUT>
 inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic > >  &points,
                               const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> > &interp_values,
                               Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > dest, int n)
 {
-    if(n<NUM_SPECIALIZATIONS) {
+    if(n<=NUM_SPECIALIZATIONS) {
         static std::array<std::function<void
                                         (const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic> >&,
                                          const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> >&,
@@ -393,7 +406,7 @@ inline void parallel_evaluate(const Eigen::Ref<const Eigen::Array<double, DIM, E
 
         lut[ n-1 ](points, interp_values, dest,n);
     }else {
-        return parallel_evaluate<T, -1, DIM, DIMOUT>(points,interp_values,dest,n);
+        return parallel_evaluate<T, Eigen::Dynamic, DIM, DIMOUT>(points,interp_values,dest,n);
     }
 
     //return parallel_evaluate<T, 10, DIM>(points,interp_values,dest);
@@ -404,13 +417,18 @@ inline const Eigen::Array<T, DIM, Eigen::Dynamic>&  chebnodesNdd(unsigned int n)
 {    
     static std::array<Eigen::Array<T, DIM, Eigen::Dynamic>, NUM_SPECIALIZATIONS> lut {
 	chebnodesNd<T,  1, DIM>(1),
-	//chebnodesNd<T,  2, DIM>(2),
-	//chebnodesNd<T,  3, DIM>(3),
-	//chebnodesNd<T,  4, DIM>(4),
-	//chebnodesNd<T,  5, DIM>(5),
+	chebnodesNd<T,  2, DIM>(2),
+	chebnodesNd<T,  3, DIM>(3),
+	chebnodesNd<T,  4, DIM>(4),
+	chebnodesNd<T,  5, DIM>(5),
+	chebnodesNd<T,  6, DIM>(6),
+	chebnodesNd<T,  7, DIM>(7),
+	chebnodesNd<T,  8, DIM>(8),
+	chebnodesNd<T,  9, DIM>(9),
+	chebnodesNd<T,  10, DIM>(10),
     };
 	
-    if(n<NUM_SPECIALIZATIONS) {
+    if(n<=NUM_SPECIALIZATIONS) {
         return lut[ n-1 ];
     }
 

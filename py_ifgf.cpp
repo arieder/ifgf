@@ -11,10 +11,10 @@
 namespace py = pybind11;
 
 template< typename OpType,typename T>
-void addOp(auto& m)
+void addOp(auto& m, const char* name)
 {
-   py::class_< OpType>(m,"HelmholtzIfgfOperator")
-	.def(py::init<T, int,size_t,int>())
+   py::class_< OpType>(m,name)
+       .def(py::init<T, int,size_t,int,double>())
 	.def("mult", &OpType::mult)	     
 	.def("init", &OpType::init);	     
 }
@@ -25,13 +25,15 @@ PYBIND11_MODULE(pyifgf, m) {
         A fast library implementing the Inetpolated Factored Greens function
     )pbdoc";
 
-    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     /*const int num_threads= std::atoi(std::getenv("IFGF_NUM_THREADS"));
     std::cout<<"running on "<<num_threads<<" threads"<<std::endl;
     auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,   num_threads );
     */
-    addOp<HelmholtzIfgfOperator<3>,std::complex<double> >(m);
-    //addOp<GradHelmholtzIfgfOperator<3>,std::complex<double> >(m);
+    addOp<HelmholtzIfgfOperator<3>,std::complex<double> >(m,"HelmholtzIfgfOperator");
+    addOp<GradHelmholtzIfgfOperator<3,0>,std::complex<double> >(m,"HelmholtzDxIfgfOperator");
+    addOp<GradHelmholtzIfgfOperator<3,1>,std::complex<double> >(m,"HelmholtzDyIfgfOperator");
+    addOp<GradHelmholtzIfgfOperator<3,2>,std::complex<double> >(m,"HelmholtzDzIfgfOperator");
     
 #ifdef VERSION_INFO
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);

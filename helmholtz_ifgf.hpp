@@ -9,13 +9,13 @@ class HelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
                                                   1, HelmholtzIfgfOperator<dim> >
 {
 public:
-    typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray;
+    typedef Eigen::Array<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
     HelmholtzIfgfOperator(std::complex<double> waveNumber,
                           size_t leafSize,
                           size_t order,
-                          size_t n_elem=1):
-        IfgfOperator<std::complex<double>, dim, 1, HelmholtzIfgfOperator<dim> >(leafSize,order, n_elem),
+                          size_t n_elem=1,double tol=-1):
+        IfgfOperator<std::complex<double>, dim, 1, HelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tol),
         k(waveNumber)
     {
     }
@@ -73,8 +73,8 @@ public:
     template<typename TX, typename TY, typename TZ>
     inline void transfer_factor(TX x, TY xc, double H, TY pxc, double pH, TZ& result) const
     {
-	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> d2=(x.colwise()-xc).colwise().squaredNorm().array();
-	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp2=(x.colwise()-pxc).colwise().squaredNorm().array();
+	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> d2=(x.matrix().colwise()-xc).colwise().squaredNorm().array();
+	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp2=(x.matrix().colwise()-pxc).colwise().squaredNorm().array();
 
 	/*const auto invd=Eigen::rsqrt(d2);
 
@@ -86,8 +86,8 @@ public:
 	
         //result*= Eigen::exp( -k*(d-dp) )*(dp*invd);
 	for (size_t i=0;i<x.cols();i++) {
-	    const double d=(x.col(i)-xc).norm();
-	    const double dp=(x.col(i)-pxc).norm();
+	    const double d=(x.col(i).matrix()-xc).norm();
+	    const double dp=(x.col(i).matrix()-pxc).norm();
 	    
 	    result(i)*=std::exp(-k*(d-dp))*dp/d;
 	}
@@ -116,10 +116,10 @@ public:
 
         result.fill(0);        
 	for (int j = 0; j < y.cols(); j++) {
-            const double dc = (y.col(j) - xc).norm();
+            const double dc = (y.matrix().col(j) - xc).norm();
 
 	    for (int i = 0; i < x.cols(); i++) {
-                double d = (x.col(i) - y.col(j)).norm();
+                double d = (x.col(i) - y.col(j)).matrix().norm();
 		
                 result[j] +=
 		    (d==0) ? 0 : weights[i] * 
@@ -131,15 +131,15 @@ public:
 
     inline unsigned int orderForBox(double H, unsigned int baseOrder) const
     {
-	
-        const int order = baseOrder; // +  std::max(round(H*imag(k)), 0.0);	
+	const double reduction=log(0.25*H*real(k)+1.0)/log(2.0);
+        const int order =std::max(2.0,baseOrder - reduction); // +  std::max(round(H*imag(k)), 0.0);
         return order;
     }
 
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
 	const unsigned int order=orderForBox(H,baseOrder);
-	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
+	double delta=std::max( 2*abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
 	//double delta=std::max(abs(imag(k))*H/2,1.0);
 	base*=(int) ceil(delta);
 	return base;	    

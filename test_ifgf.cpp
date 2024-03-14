@@ -23,6 +23,8 @@ std::complex<double> kernel(const Point& x, const Point& y)
 #include <tbb/global_control.h>
 #include <fenv.h>
 
+#include <coz.h>
+
 
 int main()
 {
@@ -33,10 +35,10 @@ int main()
 
 
     //Eigen::initParallel();
-    auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
+    //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(k,10,10,2);
+    HelmholtzIfgfOperator<dim> op(k,10,7,2);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
@@ -47,10 +49,12 @@ int main()
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
     weights = Eigen::VectorXd::Random(N);
 
-
-    std::cout<<"mult"<<std::endl;
-    Eigen::Vector<std::complex<double>, Eigen::Dynamic> result = op.mult(weights);
-    std::cout << "done multiplying" << std::endl;
+    Eigen::Vector<std::complex<double>, Eigen::Dynamic> result;
+    for(int i=0;i<1000;i++) {
+	std::cout<<"mult"<<std::endl;
+	result = op.mult(weights);
+	std::cout << "done multiplying" << std::endl;
+    }
 
     srand((unsigned) time(NULL));
     double maxE = 0;
