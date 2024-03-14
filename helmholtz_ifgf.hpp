@@ -139,7 +139,7 @@ public:
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
 	const unsigned int order=orderForBox(H,baseOrder);
-	double delta=std::max( 2*abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
+	double delta=std::max( 2*abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1/2. this guarantees spectral convergence w.r.t. p.
 	//double delta=std::max(abs(imag(k))*H/2,1.0);
 	base*=(int) ceil(delta);
 	return base;	    
