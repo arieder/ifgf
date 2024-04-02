@@ -6,7 +6,7 @@
 #include <map>
 #include <iostream>
 
-#include "octree.hpp"
+#include "boundingbox.hpp"
 
 template<size_t DIM>
 class ConeDomain

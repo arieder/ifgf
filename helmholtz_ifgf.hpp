@@ -129,16 +129,18 @@ public:
         return result;
     }
 
-    inline unsigned int orderForBox(double H, unsigned int baseOrder) const
+    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder) const
     {
-	const double reduction=log(0.25*H*real(k)+1.0)/log(2.0);
-        const int order =std::max(2.0,baseOrder - reduction); // +  std::max(round(H*imag(k)), 0.0);
+	
+	Eigen::Vector<int,dim> order;
+	order.fill(baseOrder);
+	order[0]=std::max((int) baseOrder-2,1);
         return order;
     }
 
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
-	const unsigned int order=orderForBox(H,baseOrder);
+	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
 	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
 	//double delta=std::max(abs(imag(k))*H/2,1.0);
 	base*=(int) ceil(delta);

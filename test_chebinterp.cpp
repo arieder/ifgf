@@ -9,64 +9,43 @@
 
 int main()
 {
-    const int N = 50*50;
-    const int dim = 3;
+    const int N = 10;
+    const int dim = 2;
 
     typedef std::complex<double> T;
-    Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N)+0.01;
+    Eigen::Array<double, dim, Eigen::Dynamic> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N)+0.01;
 
     const double H = 0.1;
     const double k = 1;
     typedef Eigen::Vector<double, dim> Point;
-    const Point xc{0, H / 2.0, 0};
+    const Point xc{0, H / 2.0};
     auto kernel = [&](auto pnt) {
-        //pnt[0]=r , pnt[1]=theta
-        Point x;
-        x.fill(0);
-        x[0] = pnt[0]*cos(pnt[1]);
-        x[1] = pnt[0]*sin(pnt[1]);
-
-        x -= xc;
-        const double d = x.norm();       
-        //std::cout<<"["<<H/pnt[0]<<", "<<(pnt[0]/d)*sin(k*(d-pnt[0]))<<"], ";//<<std::endl;
-        return (pnt[0]/d)*exp(-T(0,1)*k*(d-pnt[0]));
+        auto d=pnt.matrix().squaredNorm();
+	return exp(d)/(d+1);
     };
 
-    auto kernel2 = [&](auto pnt) {
-        const double s0=0;
-        const double s1=sqrt(dim)/dim;
-        const double s = 0.5 * ((s1 - s0) * pnt[0] + (s1 + s0));
-        //double s = std::min(1e-4 + 0.9 * (pnt[0] + 1),1.0);
-        double r =  H / s;
-
-        const int dj=-1;
-        auto tt=0.5*(pnt[1]+1);
-        double theta = M_PI*pnt[1];//2*std::asin(pnt[1]);//std::exp(-1/tt)*std::exp(1);
-
-        return kernel(Eigen::Vector2d{r,theta});
-    };
-
-    const int p = 25;
-    auto interp_nodes = ChebychevInterpolation::chebnodesNd<double, p, dim>();
+    const int p = 15;
+    Eigen::Vector<int, 2> ns{p-2,p};
+    Eigen::Array<double, dim, Eigen::Dynamic> interp_nodes = ChebychevInterpolation::chebnodesNd<double,-1,-1>(ns);
 
     Eigen::Array<T, Eigen::Dynamic, 1> interp_values(interp_nodes.cols());
     interp_values.fill(0);
     for (int i = 0; i < interp_nodes.cols(); i++) {
         const Eigen::Vector<double, dim> &pnt = interp_nodes.col(i);
 
-        interp_values[i] = kernel2(pnt);
+        interp_values[i] = kernel(pnt);
     }
     std::cout<<"1"<<std::endl;
 
     Eigen::Array<T, Eigen::Dynamic, 1> values(N);
     for (int i = 0; i < values.size(); i++) {
-        values[i] = kernel2(points.col(i));
+        values[i] = kernel(points.col(i));
     }
     std::cout<<"2"<<std::endl;
     Eigen::Array<T, Eigen::Dynamic, 1> approx_values(N);
     //Eigen::internal::set_is_malloc_allowed(false);
 
-    ChebychevInterpolation::parallel_evaluate<T, p, dim>(points, interp_values, approx_values);
+    ChebychevInterpolation::parallel_evaluate<T, dim,1>(points, interp_values, approx_values,p);
 
     //Eigen::internal::set_is_malloc_allowed(true);
 

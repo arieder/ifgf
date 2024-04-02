@@ -354,7 +354,7 @@ public:
 	target->print();
     }
 
-    void calculateInterpolationRange(  std::function<size_t(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H)
+    void calculateInterpolationRange(  std::function<Eigen::Vector<int,DIM>(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H)
     {
 	BoundingBox<DIM> global_box;
 	global_box.min().fill(0);

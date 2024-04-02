@@ -1,6 +1,7 @@
 #ifndef _UTIL_HPP_
 #define _UTIL_HPP_
 
+#include <Eigen/Dense>
 #include <numeric>
 
 #include <algorithm>
@@ -138,8 +139,8 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
     {
 
 	auto p=x.colwise()-xc.array();
-
-	const Eigen::Array<double, 1,Eigen::Dynamic> a = p.row(0)*p.row(0)+p.row(1)*p.row(1);
+	
+	const auto a = p.row(0)*p.row(0)+p.row(1)*p.row(1);
 	rs.row(2)= p.row(0).binaryExpr(p.row(1), [](double a,double b) {return  std::atan2(b,a);});
 	rs.row(1)= p.row(2).binaryExpr(a, [](double b,double aj){return std::atan2(std::sqrt(aj),b);});
 	rs.row(0)=H/((a+p.row(2)*p.row(2)).sqrt());
@@ -156,7 +157,9 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
 
 
 	return ps;
-	}
+    }
+
+
     
 };
 
