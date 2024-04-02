@@ -29,8 +29,8 @@ public:
     {
 	if constexpr (DIM==3) {
 	    m_base_n_elements[0]=1;
-	    m_base_n_elements[1]=3;
-	    m_base_n_elements[2]=6;
+	    m_base_n_elements[1]=2;
+	    m_base_n_elements[2]=4;
 	}else {
 	    m_base_n_elements[0]=1;
 	    m_base_n_elements[1]=2;
