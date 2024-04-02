@@ -30,7 +30,7 @@ public:
     class OctreeNode
     {
     private:
-        std::shared_ptr<OctreeNode > m_parent;
+        std::weak_ptr<OctreeNode > m_parent;
         long int m_id;
         std::shared_ptr<OctreeNode> m_children[N_Children];
         //std::vector<std::shared_ptr<const OctreeNode> > m_neighbors;
@@ -59,8 +59,7 @@ public:
         }
 
         ~OctreeNode()
-        {
-
+        {	    
         }
 
         void setId(size_t id)
@@ -159,7 +158,7 @@ public:
 	    return  m_targetRange.first !=m_targetRange.second;
 	}
 
-        const std::shared_ptr<const OctreeNode> parent() const
+        const std::weak_ptr<const OctreeNode> parent() const
         {
             return m_parent;
         }
@@ -392,13 +391,15 @@ public:
 		}
 
 		BoundingBox<DIM> pBox;
+		std::shared_ptr<const OctreeNode> parent=node->parent().lock();
 		//now also add all the parents targets	       
-		if(node->parent() && parentHasFarTargets(node))
+		if(parent && parentHasFarTargets(node))
 		{
+
 		    
-		    pBox=node->parent()->interpolationRange();
-		    const Point pxc=node->parent()->boundingBox().center();
-		    const double pH=node->parent()->boundingBox().sideLength();
+		    pBox=parent->interpolationRange();
+		    const Point pxc=parent->boundingBox().center();
+		    const double pH=parent->boundingBox().sideLength();
 
 
 		    if(!pBox.isNull())
@@ -413,7 +414,7 @@ public:
 			//box.extend(Util::cartToInterp<DIM>(cMax,xc,H));
 
 			//TODO check if this is necessary
-			const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();
+			const ConeDomain<DIM>& p_grid=parent->coneDomain();
 			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 			for(size_t el : p_grid.activeCones() ) {			
 			    for (size_t i=0;i<chebNodes.cols();i++) {
@@ -462,10 +463,10 @@ public:
 
 		if(!pBox.isNull())
 		{
-		    const Point pxc=node->parent()->boundingBox().center();
-		    const double pH=node->parent()->boundingBox().sideLength();
+		    const Point pxc=parent->boundingBox().center();
+		    const double pH=parent->boundingBox().sideLength();
 
-		    const ConeDomain<DIM>& p_grid=node->parent()->coneDomain();		    
+		    const ConeDomain<DIM>& p_grid=parent->coneDomain();		    
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 
 		    for(size_t el : p_grid.activeCones() ) {			
@@ -588,7 +589,7 @@ public:
 
     bool parentHasFarTargets(const std::shared_ptr<const OctreeNode>& node) const
     {
-	const std::shared_ptr<const OctreeNode>& parent = node->parent();
+	const std::shared_ptr<const OctreeNode>& parent = node->parent().lock();
 	if(parent) {
 	    return parent->farTargets().size()>0 || parentHasFarTargets(parent);
 	}else{
@@ -698,8 +699,9 @@ public:
     
     const size_t parentId(unsigned int level, size_t i) const
     {
-	size_t id = m_nodes[level][i]->parent()->id();
-	assert(m_nodes[level-1][id]==m_nodes[level][i]->parent());
+	auto parent=m_nodes[level][i]->parent().lock();
+	size_t id = parent->id();
+	assert(m_nodes[level-1][id]==parent);
         return id;
     }
 

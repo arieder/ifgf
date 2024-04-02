@@ -50,7 +50,7 @@ int main()
     weights = Eigen::VectorXd::Random(N);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> result;
-    for(int i=0;i<1000;i++) {
+    for(int i=0;i<10;i++) {
 	std::cout<<"mult"<<std::endl;
 	result = op.mult(weights);
 	std::cout << "done multiplying" << std::endl;
