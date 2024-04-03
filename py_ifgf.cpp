@@ -5,6 +5,7 @@
 
 #include <tbb/global_control.h>
 
+#include "double_layer_helmholtz_ifgf.hpp"
 #include "helmholtz_ifgf.hpp"
 #include "grad_helmholtz_ifgf.hpp"
 
@@ -33,6 +34,9 @@ PYBIND11_MODULE(pyifgf, m) {
     addOp<HelmholtzIfgfOperator<3>,std::complex<double> >(m,"HelmholtzIfgfOperator");
     addOp<GradHelmholtzIfgfOperator<3>,std::complex<double> >(m,"GradHelmholtzIfgfOperator")
 	.def("setDx", &GradHelmholtzIfgfOperator<3>::setDx);
+
+    addOp<DoubleLayerHelmholtzIfgfOperator<3>,std::complex<double> >(m,"DoubleLayerHelmholtzIfgfOperator");
+
     //addOp<GradHelmholtzIfgfOperator<3,1>,std::complex<double> >(m,"HelmholtzDyIfgfOperator");
     //addOp<GradHelmholtzIfgfOperator<3,2>,std::complex<double> >(m,"HelmholtzDzIfgfOperator");
     

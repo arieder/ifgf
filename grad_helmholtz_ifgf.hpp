@@ -123,7 +123,7 @@ public:
 
 
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
-                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result) const
+                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result,IndexRange srcIds) const
     {
         assert(result.size() == y.cols());
         assert(w.size() == x.cols());
@@ -164,8 +164,8 @@ public:
     }
 
     Eigen::Array<T, Eigen::Dynamic,1>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
-                                                                const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
-            const Point& xc, double H) const
+							      const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
+							      const Point& xc, double H,IndexRange srcIds) const
     {
 
         Eigen::Array<T, Eigen::Dynamic,1> result(y.cols());

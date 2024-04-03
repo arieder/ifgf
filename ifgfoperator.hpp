@@ -50,6 +50,11 @@ public:
 
     }
 
+    const Octree<T,DIM>& octree() const {
+	return *m_octree;
+    }
+
+
 
     void init(const PointArray &srcs, const PointArray targets)
     {
@@ -181,6 +186,7 @@ public:
 
 	std::cout<<"permutation"<<std::endl;
         Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation (weights, m_octree->src_permutation());
+	
         Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(m_numTargets,DIMOUT);
         result.fill(0);
         int level = m_octree->levels() - 1;
@@ -299,7 +305,7 @@ public:
 			    static_cast<const Derived *>(this)
 			    ->evaluateFactoredKernel(m_octree->sourcePoints(srcs),
 						     transformedNodes.local(),
-						     new_weights.segment(srcs.first, nS), center, H);
+						     new_weights.segment(srcs.first, nS), center, H,srcs);
 		    }
 		}
 #endif
@@ -394,7 +400,7 @@ public:
 			    const size_t el=grid.activeCones()[memId];
 			    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes.local(), parent_center, pH);
 			    tmpInterpolationData.middleRows(memId*stride,stride) =
-				static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
+				static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH,srcs);
 			}
 		    }
 
@@ -490,7 +496,7 @@ public:
 							 m_octree->sourcePoints(srcs),
 							 m_octree->targetPoints(targets),
 							 weights.segment(srcs.first, nS),
-							 tmp_result);
+							 tmp_result,srcs);
 		    
 	    {
 		tbb::queuing_mutex::scoped_lock lock(resultMutex);
@@ -596,7 +602,7 @@ public:
                 transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
                 storage.values.middleRows(memId*stride,stride) =
                     static_cast<const Derived *>(this)->evaluateFactoredKernel
-                    (m_octree->sourcePoints(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H);
+                    (m_octree->sourcePoints(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H,srcs);
             }
         }else //generate the interpolation data by evaluating the children recursively
         {
@@ -638,7 +644,7 @@ public:
                     static_cast<const Derived *>(this)->evaluateFactoredKernel(m_octree->sourcePoints(srcs),
                                                                                transformedNodes,
                                                                                weights.segment(srcs.first, nS),
-                                                                               parent_center, pH);
+                                                                               parent_center, pH,srcs);
             }
         }
         
@@ -856,13 +862,16 @@ public:
 
     inline void transformInterpToCart(const Eigen::Ref<const PointArray > &nodes,
                                Eigen::Ref<PointArray > transformed, const Eigen::Vector<double, DIM> &xc, double H) const
-   { 
+    { 
 
-       transformed = Util::interpToCart<DIM>(nodes.array(), xc, H);
-        /*for (int i = 0; i < nodes.cols(); i++) {
-            transformed.col(i) = Util::interpToCart<DIM>(nodes.col(i), xc, H);
-	    }*/
+	transformed = Util::interpToCart<DIM>(nodes.array(), xc, H);
+       /*for (int i = 0; i < nodes.cols(); i++) {
+	 transformed.col(i) = Util::interpToCart<DIM>(nodes.col(i), xc, H);
+	 }*/
     }
+
+
+    
 
 private:
     std::unique_ptr<Octree<T, DIM> > m_octree;
