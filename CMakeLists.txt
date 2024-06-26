@@ -38,7 +38,7 @@ include_directories(${EIGEN3_INCLUDE_DIR} ${TBB_INCLUDE_DIR})
 
 set(TARGET_NAME "test_cheb")
 set(SOURCE_FILE test_chebinterp.cpp)
-set(COMPILE_FLAGS "-fsycl -Wall ${WIN_FLAG}")
+set(COMPILE_FLAGS "-fsycl -Wall ${WIN_FLAG} -O2")
 set(LINK_FLAGS "-fsycl")
 
 # To compile in a single command:

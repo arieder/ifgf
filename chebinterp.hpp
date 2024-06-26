@@ -183,8 +183,8 @@ namespace ChebychevInterpolation
 		for (size_t j = 0; j < ns[1]; j++) {
 		    const double v2=v1*bary_weight(j,ns[1])*(x[pnt*3+1]-nodes2[j]-1e-16);		    
 		    for(size_t l=0; l<ns[0]; l++) {
-			const double v3=v2*bary_weight(l,ns[0])*(x[pnt*3]-nodes3[l]-1e-16);
-			const double wijk=1.0/(v3);
+			const PointScalarType v3=v2*bary_weight(l,ns[0])*(x[pnt*3]-nodes3[l]-1e-16);
+			const PointScalarType wijk=1.0/(v3);
 			f+=vals[idx]*wijk;
 			weight+=wijk;
 			idx++;
@@ -307,9 +307,9 @@ namespace ChebychevInterpolation
         return result;
     }
 
-    template <typename T, unsigned int DIM, unsigned int DIMOUT>
+    template <typename T, unsigned int DIM, unsigned int DIMOUT,typename PointScalarType>
     inline void parallel_evaluate(
-				  const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic> >
+				  const Eigen::Ref<const Eigen::Array<PointScalarType, DIM, Eigen::Dynamic> >
 				  &points,
 				  const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> >
 				  &interp_values,
