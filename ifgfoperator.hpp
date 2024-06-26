@@ -47,7 +47,7 @@ public:
 
     ~IfgfOperator()
     {
-
+	std::cout<<"freeing ifgf"<<std::endl;
     }
 
     const Octree<T,DIM>& octree() const {

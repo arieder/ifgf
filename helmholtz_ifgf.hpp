@@ -20,6 +20,11 @@ public:
     {
     }
 
+    ~HelmholtzIfgfOperator()
+    {
+	std::cout<<"deleting helmholtz ifgf"<<std::endl;
+    }
+
     typedef std::complex<double > T ;
     /*
     template<typename TX>

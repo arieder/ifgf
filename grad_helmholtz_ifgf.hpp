@@ -12,6 +12,7 @@ class GradHelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
 public:
     typedef Eigen::Array<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
+
     GradHelmholtzIfgfOperator(std::complex<double> waveNumber,
                           size_t leafSize,
                           size_t order,
@@ -20,6 +21,12 @@ public:
         k(waveNumber)
     {
     }
+
+    ~GradHelmholtzIfgfOperator()
+    {
+	std::cout<<"deleting grad helmholtz ifgf"<<std::endl;
+    }
+
 
     typedef std::complex<double > T ;
 
@@ -219,7 +226,7 @@ public:
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
 	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
-	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
+	double delta=std::max( 1.5*abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
 	base*=(int) ceil(delta);
 	return base;	    
     }

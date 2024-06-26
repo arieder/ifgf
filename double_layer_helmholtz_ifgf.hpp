@@ -12,6 +12,7 @@ class DoubleLayerHelmholtzIfgfOperator : public IfgfOperator<std::complex<double
 public:
     typedef Eigen::Array<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
+
     DoubleLayerHelmholtzIfgfOperator(std::complex<double> waveNumber,
 				     size_t leafSize,
 				     size_t order,
@@ -20,6 +21,12 @@ public:
         k(waveNumber)
     {
     }
+
+    ~DoubleLayerHelmholtzIfgfOperator()
+    {
+	std::cout<<"deleting  DL helmholtz ifgf"<<std::endl;
+    }
+
 
 
     void init(const PointArray &srcs, const PointArray targets, const PointArray& normals)

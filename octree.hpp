@@ -827,7 +827,7 @@ private:
             min = bbox.min();
             max = bbox.max();
 
-            Eigen::Vector<double, DIM> size = 0.5d * bbox.diagonal();
+            Eigen::Vector<double, DIM> size = 0.5 * bbox.diagonal();
 
             //find the quadrant that the next src idx belongs to
 

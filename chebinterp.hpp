@@ -14,6 +14,8 @@
 
 #include "cone_domain.hpp"
 
+#include <sycl/sycl.hpp>
+using namespace sycl;
 
 namespace ChebychevInterpolation
 {
@@ -113,6 +115,7 @@ namespace ChebychevInterpolation
     }
 
 
+
     template<typename TV,typename TV2>
     auto   computeDiffVector(int n, const TV& x,const TV2& nodes)
     {	
@@ -131,14 +134,68 @@ namespace ChebychevInterpolation
     }
 
     template<typename TV, typename  TP>
-    auto inline  transformNodesToInterval(TV& nodes, TP min, TP max)
+    auto inline  transformNodesToInterval(TV& nodes, TP min, TP max) 
     {
 	const TP a=(max-min)/2.0;
 	const TP b=(max+min)/2.0;
 	nodes=a*nodes+b;
     }
 
+    int
+    inline bary_weight(size_t i, size_t p) 
+    {
+	return (i==0 || i==p-1 ? 2:1) * (i % 2 == 0 ? 1:-1);
+    }
 
+
+
+    template <typename T, typename PointScalarType>
+    void
+    evaluate_sycl(
+		  buffer<PointScalarType>& b_x,
+		  buffer<T>& b_vals,
+		  const mint3& ns,
+		  buffer<PointScalarType>& b_nodes1,
+		  buffer<PointScalarType>& b_nodes2,
+		  buffer<PointScalarType>& b_nodes3,		  
+		  buffer<T> & b_result,
+		  handler& h,
+		  size_t N)
+
+    {	
+    	accessor x(b_x,h,read_only);
+	accessor vals(b_vals,h,read_only);
+
+	accessor result(b_result,h,write_only);
+
+	accessor nodes1(b_nodes1,h,read_only);
+	accessor nodes2(b_nodes2,h,read_only);
+	accessor nodes3(b_nodes3,h,read_only);
+
+
+	h.parallel_for(N, [=](id<1> pnt)
+	{
+	    PointScalarType weight=0;
+	    T f=0;
+	    size_t idx=0;
+	    for (size_t i = 0; i < ns[2]; i++) {
+		const double v1=bary_weight(i,ns[2])* (x[pnt*3+2]-nodes1[i]-1e-16);
+		for (size_t j = 0; j < ns[1]; j++) {
+		    const double v2=v1*bary_weight(j,ns[1])*(x[pnt*3+1]-nodes2[j]-1e-16);		    
+		    for(size_t l=0; l<ns[0]; l++) {
+			const double v3=v2*bary_weight(l,ns[0])*(x[pnt*3]-nodes3[l]-1e-16);
+			const double wijk=1.0/(v3);
+			f+=vals[idx]*wijk;
+			weight+=wijk;
+			idx++;
+		    }
+		}		
+	    }
+	    result[pnt]=f/weight;
+	});
+    }
+
+    
     //3d evaluation code
     template <typename T, typename PointScalarType, int DIMOUT>
     inline Eigen::Array<T, Eigen::Dynamic, DIMOUT>
@@ -148,18 +205,16 @@ namespace ChebychevInterpolation
              const Eigen::Vector<int, 3>& ns,
              BoundingBox<3> box = BoundingBox<3>()  )
     {
-        const int DIM = 3;
-        Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(x.cols(), DIMOUT);
 
-        result.fill(0);
-
-        assert(DIM == x.rows());
-        Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes1 =
+	Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes1 =
             cachedChebnodes1d<PointScalarType>(ns[0]);        
-        Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes2 =
-            cachedChebnodes1d<PointScalarType>(ns[1]);
-        Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes3 =
-            cachedChebnodes1d<PointScalarType >(ns[2]);
+
+	Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes2 =
+            cachedChebnodes1d<PointScalarType>(ns[1]);        
+
+	Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes3 =
+            cachedChebnodes1d<PointScalarType>(ns[2]);        
+
 
 	if(!box.isNull()) {	    
 	    transformNodesToInterval(nodes1, box.min()[0], box.max()[0]);
@@ -167,35 +222,39 @@ namespace ChebychevInterpolation
 	    transformNodesToInterval(nodes3, box.min()[2], box.max()[2]);
 	}
 
-	Eigen::Array<PointScalarType, Eigen::Dynamic, Eigen::Dynamic> xdiff = computeDiffVector(ns[0], x.row(0), nodes1);
-        Eigen::Array<PointScalarType, Eigen::Dynamic, Eigen::Dynamic> ydiff = computeDiffVector(ns[1], x.row(1), nodes2);
-        Eigen::Array<PointScalarType, Eigen::Dynamic, Eigen::Dynamic> zdiff = computeDiffVector(ns[2], x.row(2), nodes3);
+	buffer b_nodes1{nodes1};
+	buffer b_nodes2{nodes2};
+	buffer b_nodes3{nodes3};
 
-        size_t idx=0;
-        for (size_t i = 0; i < ns[2]; i++) {
-            for (size_t j = 0; j < ns[1]; j++) {	       
-		// we vectorize the innermost loop. This part computes
-		// result+=\sum_{k} vals[i,j,k]*xdiff[l,:]ydiff[j,:] zdiff[i,:]
-		auto tmp = (xdiff.matrix() * vals.middleRows(idx, ns[0]).matrix())
-			       .array(); // nom.matrix()).array();
-		for (int l = 0; l < DIMOUT; l++) {
-		  result.col(l) += (zdiff.col(i) * ydiff.col(j)) * tmp.col(l);
-		}
-		idx+=ns[0];
-            }
-        }
+	Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(x.cols(), DIMOUT);
+	buffer<T> b_result(x.cols());
 
-	Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w1 = xdiff.rowwise().sum().transpose();
-        Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w2 = ydiff.rowwise().sum().transpose();
-        Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w3 = zdiff.rowwise().sum().transpose();
 
+	buffer<PointScalarType> b_x{x.data(),range{(unsigned long) 3*x.cols()}};
+	buffer b_vals{vals};
 	
+	
+	queue q;
 
-        const auto denom = w1 * w2 * w3;
-        result.colwise() /= denom;
+	mint3 mns{ns[0],ns[1],ns[2]};
+	q.submit([&](handler& h)
+	{	   
+	    evaluate_sycl(b_x,b_vals,mns,b_nodes1,b_nodes2,b_nodes3,b_result,h,x.cols());
+	}
+	    );
 
-        return result;
+
+	//TODO more efficient way to avoid this extra copy?
+	host_accessor result_ac(b_result,read_only);
+
+	for(size_t i=0;i<x.cols();i++) {
+	    result[i]=result_ac[i];
+	}
+
+	return result;
     }
+
+
 
 
     //2d evaluation code
