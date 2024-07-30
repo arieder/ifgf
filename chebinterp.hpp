@@ -31,7 +31,7 @@ namespace ChebychevInterpolation
     Eigen::Array<T,Eigen::Dynamic,1> cachedChebnodes1d(int n)
     {
 	static std::unordered_map<size_t, Eigen::Array<T, Eigen::Dynamic,1 > >  cache;
-	if (cache.contains(n)) {
+	if (cache.count(n) > 0) {
 	    return cache[n];
 	} else {	    
 	    cache[n] = chebnodes1d<T, Eigen::Dynamic>(n);
@@ -280,7 +280,7 @@ namespace ChebychevInterpolation
             cache;
 
 	const size_t key=cache_key(ns);
-	if (cache.contains(key)) {
+	if (cache.count(key) > 0) {
 	    return cache[key];
 	} else {
 	    if constexpr(DIM==3) {
