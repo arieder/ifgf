@@ -8,6 +8,7 @@
 #include "double_layer_helmholtz_ifgf.hpp"
 #include "helmholtz_ifgf.hpp"
 #include "grad_helmholtz_ifgf.hpp"
+#include "laplace_ifgf.hpp"
 
 namespace py = pybind11;
 
@@ -36,6 +37,13 @@ PYBIND11_MODULE(pyifgf, m) {
 	.def("setDx", &GradHelmholtzIfgfOperator<3>::setDx);
 
     addOp<DoubleLayerHelmholtzIfgfOperator<3>,std::complex<double> >(m,"DoubleLayerHelmholtzIfgfOperator");
+
+
+    py::class_< LaplaceIfgfOperator<3>>(m,"LaplaceIfgfOperator")
+	.def(py::init<int,size_t,int,double>())
+       .def("mult", &LaplaceIfgfOperator<3>::mult)	     
+       .def("init", &LaplaceIfgfOperator<3>::init);	     
+
 
     //addOp<GradHelmholtzIfgfOperator<3,1>,std::complex<double> >(m,"HelmholtzDyIfgfOperator");
     //addOp<GradHelmholtzIfgfOperator<3,2>,std::complex<double> >(m,"HelmholtzDzIfgfOperator");

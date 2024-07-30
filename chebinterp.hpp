@@ -185,9 +185,9 @@ namespace ChebychevInterpolation
             }
         }
 
-	Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w1 = xdiff.rowwise().sum().transpose();
-        Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w2 = ydiff.rowwise().sum().transpose();
-        Eigen::Array<PointScalarType, x.ColsAtCompileTime,1> w3 = zdiff.rowwise().sum().transpose();
+	Eigen::Array<PointScalarType, -1,1> w1 = xdiff.rowwise().sum().transpose();
+        Eigen::Array<PointScalarType, -1,1> w2 = ydiff.rowwise().sum().transpose();
+        Eigen::Array<PointScalarType, -1,1> w3 = zdiff.rowwise().sum().transpose();
 
 	
 
