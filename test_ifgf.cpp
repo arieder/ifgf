@@ -6,6 +6,8 @@
 #include "ifgfoperator.hpp"
 #include "octree.hpp"
 
+#include "combined_field_helmholtz_ifgf.hpp"
+
 const int dim=3;
 
 const std::complex<double>  k = std::complex<double>(0, 32);
@@ -13,7 +15,7 @@ typedef Eigen::Vector<double,dim> Point;
 std::complex<double> kernel(const Point& x, const Point& y)
 {
     double d = (x - y).norm();
-
+    
     return d == 0 ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
 }
 
@@ -39,6 +41,7 @@ int main()
     //oneapi::tbb::task_arena arena(1);
 
     HelmholtzIfgfOperator<dim> op(k,10,7,2);
+    CombinedFieldHelmholtzIfgfOperator<dim> op2(k,10,7,2);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());

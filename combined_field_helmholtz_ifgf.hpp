@@ -26,7 +26,7 @@ public:
     {
 	IfgfOperator<T,dim,1,CombinedFieldHelmholtzIfgfOperator<dim> >::init(srcs,targets);
 
-	m_normals=Util::copy_with_permutation(normals, this->octree().src_permutation());
+	m_normals=Util::copy_with_permutation(normals, this->src-octree().permutation());
     }
    
     
@@ -132,7 +132,7 @@ public:
 		
 		//if(d>1e-12) {
 		const double w= (-(1.0/(d2)) *dc*  (x.col(i)-y.col(j)).matrix().dot(m_normals.col(srcIds.first+i).matrix()));
-		result.row(j) +=  weights[i] * exp(-k * (  d-dc)) * (-(std::complex<double>(0,1)/d) + ((-k-id)* w));
+		result.row(j) +=  weights[i] * exp(-k * (  d-dc)) * (-(std::complex<double>(0,1)*id) + ((-k-id)* w));
 		//exp(-k * (d - dc))*dc * (-1.0 /(d*d))*(k+1.0/d)*(x(dx,i)-y(dx,j));
 		//}
 	    }
