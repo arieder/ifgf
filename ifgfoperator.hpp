@@ -60,7 +60,7 @@ public:
     {
         m_octree->build(srcs, targets);
        
-        m_octree->sanitize();
+        //m_octree->sanitize();
 
         m_numTargets = targets.cols();
         m_numSrcs = srcs.cols();

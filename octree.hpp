@@ -745,6 +745,7 @@ public:
                 assert(indices[i] == 1);
             }
         }
+	leaf_indices.resize(m_targets.cols());	
 
 	leaf_indices.fill(0);
         for (int level = 0; level < m_levels; level++) {
