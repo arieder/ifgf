@@ -15,7 +15,7 @@
 
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
-//#define  RECURSIVE_MULT
+#define  RECURSIVE_MULT
 
 #include <memory>
 
@@ -566,7 +566,7 @@ public:
     {
         //std::cout<<"recursive mult"<<level<<" "<<id<<std::endl;
         
-        if(id<0 || !m_src_octree->hasSources(level,id))
+        if(id<0 || !m_src_octree->hasPoints(level,id))
             return;
 
         ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT> storage;
@@ -575,7 +575,7 @@ public:
         BoundingBox bbox = m_src_octree->bbox(level, id);
         auto center = bbox.center();
         double H = bbox.sideLength();
-        IndexRange srcs = m_src_octree->sources(level, id);
+        IndexRange srcs = m_src_octree->points(level, id);
         const size_t nS = srcs.second - srcs.first;
 
         const auto order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
@@ -604,7 +604,7 @@ public:
                 transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
                 storage.values.middleRows(memId*stride,stride) =
                     static_cast<const Derived *>(this)->evaluateFactoredKernel
-                    (m_src_octree->sourcePoints(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H,srcs);
+                    (m_src_octree->points(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H,srcs);
             }
         }else //generate the interpolation data by evaluating the children recursively
         {

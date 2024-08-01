@@ -26,7 +26,7 @@ public:
     {
 	IfgfOperator<T,dim,1,CombinedFieldHelmholtzIfgfOperator<dim> >::init(srcs,targets);
 
-	m_normals=Util::copy_with_permutation(normals, this->src-octree().permutation());
+	m_normals=Util::copy_with_permutation(normals, this->src_octree().permutation());
     }
    
     
