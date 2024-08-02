@@ -335,8 +335,8 @@ public:
     void calculateInterpolationRange(  std::function<Eigen::Vector<int,DIM>(double)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double)> N_for_H, const Octree& target)
     {
 	BoundingBox<DIM> global_box;
-	global_box.min().fill(0);
-	global_box.max().fill(0);
+	//global_box.min().fill(10);
+	//global_box.max().fill(0);
 
 	const auto & target_points=target.points();
 	
