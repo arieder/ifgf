@@ -46,7 +46,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2);
+    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,1e-8);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray normals = (PointArray::Random(dim,N).array());

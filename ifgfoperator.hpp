@@ -64,6 +64,8 @@ public:
 	
 	m_src_octree->buildInteractionList(*m_target_octree);
 
+
+	static_cast<Derived *>(this)->onOctreeReady();
         //m_src_octree->sanitize();
 
         m_numTargets = targets.cols();
@@ -73,12 +75,12 @@ public:
 	  m_baseOrder=estimateOrder(m_tolerance);
 	}
 
+
 	std::cout<<"calculating interp range"<<std::endl;
 	m_src_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},
 						  [this](double H){return static_cast<Derived *>(this)->elementsForBox(H, this->m_baseOrder,this->m_base_n_elements);},*m_target_octree);
-
-
     }
+
 
     int estimateOrder(double tol)
     {
@@ -127,7 +129,7 @@ public:
 	int_box.min()(0)=smin;
 	int_box.max()(0)=smax;
 	
-	const size_t n_samples=25;
+	const size_t n_samples=50;
 	//now scale to (smin,smax) x (0,PI) x (-M_PI,M_PI) (in 3d)
 	if constexpr(DIM==2) {	    
 	    int_box.min()(1)=-M_PI;
@@ -143,7 +145,7 @@ public:
 	PointArray samplePoints=PointArray::Random(DIM,n_samples);		
 	PointArray transformedSample(DIM,samplePoints.cols());
 
-	int baseOrder=0;
+	int baseOrder=2;
 	double error=std::numeric_limits<double>::max();
 
 	while(error > tol && baseOrder<max_order) {
@@ -161,6 +163,7 @@ public:
 	    for (int el =0;el<grid.n_elements();el++) {
 		Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Random(nS);
 		transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
+
 		auto data= static_cast<const Derived *>(this)->evaluateFactoredKernel
 		    (m_src_octree->points(srcs), transformedNodes, weights, center, H,srcs);
 
@@ -174,9 +177,9 @@ public:
 		Eigen::Array<T,Eigen::Dynamic,DIMOUT> approx(samplePoints.cols(),DIMOUT);
 		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(samplePoints,data,approx,order);
 		exact.matrix()-=approx.matrix();
-		error=std::max(error,exact.cwiseAbs().maxCoeff());
+		error=std::max(error,exact.cwiseAbs().maxCoeff()/norm);
 	    }
-	    std::cout<<"error2="<<error<<" at "<<baseOrder<<std::endl;;
+	    //std::cout<<"error2="<<error<<" at "<<baseOrder<<std::endl;;
 	    //error=sqrt(error)/grid.n_elements();
 	    //std::cout<<"order="<<order<<" error="<<error<<std::endl;
 	}
@@ -875,8 +878,11 @@ public:
 	 }*/
     }
 
-
-    
+protected:
+    void onOctreeReady()
+    {
+	//do nothing. but give subclasses the opportunity to initialize some things
+    }
 
 private:
     std::unique_ptr<Octree<T, DIM> > m_src_octree;

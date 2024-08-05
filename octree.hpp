@@ -209,7 +209,7 @@ public:
         m_maxLeafSize(maxLeafSize)
     {
 
-	double eta=(double) sqrt((double) DIM);;
+	double eta=(double) sqrt((double) DIM);
 	m_isAdmissible= [eta] (const BoundingBox<DIM>& src,const BoundingBox<DIM>& target) { return target.exteriorDistance(src.center()) >= eta* src.sideLength();};
 
     }
