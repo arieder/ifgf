@@ -10,13 +10,19 @@
 
 const int dim=3;
 
-const std::complex<double>  k = std::complex<double>(0, 32);
+typedef std::complex<double> Complex;
+const double  kappa = 10;
 typedef Eigen::Vector<double,dim> Point;
-std::complex<double> kernel(const Point& x, const Point& y)
-{
-    double d = (x - y).norm();
-    
-    return d == 0 ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
+std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
+{    
+    double norm = (x-y).norm();
+    double nxy = -normal.dot(x-y);
+    auto kern = exp(Complex(0,kappa)*norm) / (4 * M_PI * norm*norm*norm)
+	* ( nxy * (Complex(1,0)*1. - Complex(0,kappa)*norm)  - Complex(0,kappa)*norm*norm);
+    // return kern;
+
+    if(norm >1e-12) return kern;
+    else return 0;
 }
 
 
@@ -40,14 +46,15 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(k,10,7,2);
-    CombinedFieldHelmholtzIfgfOperator<dim> op2(k,10,7,2);
+    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
+    PointArray normals = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
 
+
     feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
-    op.init(srcs, targets);
+    op.init(srcs, targets,normals);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
     weights = Eigen::VectorXd::Random(N);
@@ -66,7 +73,7 @@ int main()
         int index = rand() % targets.cols();
         //std::cout<<"idx"<<index<<std::endl;
         for (int i = 0; i < srcs.cols(); i++) {
-            val += weights[i] * kernel(srcs.col(i), targets.col(index));
+            val += weights[i] * kernel(srcs.col(i), targets.col(index),normals.col(i));
         }
 
         double e = std::abs(val - result[index]);

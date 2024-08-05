@@ -12,12 +12,12 @@ class CombinedFieldHelmholtzIfgfOperator : public IfgfOperator<std::complex<doub
 public:
     typedef Eigen::Array<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
-    CombinedFieldHelmholtzIfgfOperator(std::complex<double> waveNumber,
+    CombinedFieldHelmholtzIfgfOperator(double waveNumber,
 				     size_t leafSize,
 				     size_t order,
 				     size_t n_elem=1,double tolerance=-1):
         IfgfOperator<std::complex<double>, dim, 1, CombinedFieldHelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tolerance),
-        k(waveNumber)
+        kappa(waveNumber)
     {
     }
 
@@ -25,36 +25,27 @@ public:
     void init(const PointArray &srcs, const PointArray targets, const PointArray& normals)
     {
 	IfgfOperator<T,dim,1,CombinedFieldHelmholtzIfgfOperator<dim> >::init(srcs,targets);
-
 	m_normals=Util::copy_with_permutation(normals, this->src_octree().permutation());
     }
    
     
     typedef std::complex<double > T ;
 
-    /*template<typename TX>
-    inline Eigen::Array<T, dim, TX::ColsAtCompileTime>  kernelFunction(TX x) const
-    {
-    Eigen::Array<typename TX::Scalar, 1, TX::ColsAtCompileTime> d2 = x.colwise().squaredNorm();
-
-	auto invd=(d2 < std::numeric_limits<typename TX::Scalar>::min()).select(0,Eigen::rsqrt(d2));
-	
-	const auto d=d2*invd;
-
-	const T factor=1.0/ (4.0 * M_PI);        
-
-	Eigen::Array<T,dim, TX::ColsAtCompileTime> res= x.colwise()*(factor*((-1.0 / d2) * Eigen::exp(- k * d) * (k + invd))).array() ;
-	return res.array();
-	//(d2 > 1e-12).select( ((-1.0 / d2) * Eigen::exp(- k * d).colwise() * (k + invd).colwise() * x) ,
-        //                         Eigen::Array<T, TX::ColsAtCompileTime,dim>::Zero(x.cols(),dim)).transpose();
-	}*/
-
+  /** CombinedFieldKernel in 3D reads
+      $$ G(x-y) = \frac{1}{4\,\pi} \, \frac{e^{i\,\kappa\,|x-y|}}{|x-y|^3} \, 
+          \left( \langle n_y, x-y\rangle (1- i\,\kappa\, | x-y|) - i\,\kappa\,|x-y|^2 \right), 
+          \quad x, y \in \mathbb R^3, \; x\not=y\,. $$ */
     inline T  kernelFunction(const Eigen::Ref< const Point >&  x,const Eigen::Ref< const Point >&  n) const
     {
-	double d = x.norm();
-	return d<1e-12 ? 0.0:
-	    exp(-k*d)*(-std::complex<double>(0,1)* (1 / (4 * M_PI)) / d
-		       -(1.0 / (4.0 * M_PI)) * (1.0/(d*d))  *(-k-1.0/d)*(x.dot(n)));	
+	double norm = x.norm();
+
+	T nxy = -n.dot(x);
+
+	auto kern = exp(T(0,kappa)*norm) / (4 * M_PI * norm*norm*norm)
+	    * ( nxy * (std::complex<double>(1.,0)*T(1.) - std::complex<double>(0,kappa)*norm)  - T(0,kappa)*norm*norm);
+	
+	return norm<1e-14 ? 0.0 : kern;
+	    
     }
 
     template<typename TX>
@@ -67,7 +58,7 @@ public:
 
 	    const auto d=d2.array()*invd.array();
 	    const double factor= (1.0/ (4.0 * M_PI));
-	    return Eigen::exp(-k * d) * invd *factor;
+	    return Eigen::exp(std::complex(0.,kappa) * d) * invd *factor;
 	}else
 	{
 	    
@@ -76,7 +67,7 @@ public:
 	    const auto id=1.0/(sqrt(d2));
 	    const auto d=d2*id;
 
-	    return exp(-k * d)*id  * (1/(4.0 * M_PI));	    
+	    return exp(std::complex(0.,kappa) * d)*id  * (1/(4.0 * M_PI));	    
 	}
     }
 
@@ -94,7 +85,7 @@ public:
 	const auto dp=Eigen::sqrt(dp2);
 	const auto d=d2*invd;
 	      
-	result*=(Eigen::exp( -k*(d-dp) )*(dp*invd));
+	result*=(Eigen::exp( std::complex(0.,kappa)*(d-dp) )*(dp*invd));
 	
     }
 
@@ -117,27 +108,40 @@ public:
 							      const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
 							      const Point& xc, double H,IndexRange srcIds) const
     {
+	Eigen::Array<T, Eigen::Dynamic,1> result(y.cols());
 
-        Eigen::Array<T, Eigen::Dynamic,1> result(y.cols());
 
-
+	const std::complex<double> k=-std::complex<double>(0,kappa);
         result.fill(0);
 	for (int j = 0; j < y.cols(); j++) {
 	    const double dc = (y.matrix().col(j) - xc).norm();
 	    for (int i = 0; i < x.cols(); i++) {
-		const double d2 = (x.matrix().col(i) - y.matrix().col(j)).squaredNorm();
+		const Point& z=y.matrix().col(j)-x.matrix().col(i);
+
+                const auto d2 = z.squaredNorm();
+		const auto nxy=z.dot(m_normals.col(srcIds.first+i).matrix());
 		
-		const double id= (d2>1e-12) ? 1.0/sqrt(d2) : 0;
-		const double d=d2*id;
+		const auto id= (d2>1e-12) ? 1.0/sqrt(d2) : 0;
+		const auto d=d2*id;
 		
 		//if(d>1e-12) {
-		const double w= (-(1.0/(d2)) *dc*  (x.col(i)-y.col(j)).matrix().dot(m_normals.col(srcIds.first+i).matrix()));
-		result.row(j) +=  weights[i] * exp(-k * (  d-dc)) * (-(std::complex<double>(0,1)*id) + ((-k-id)* w));
+		//const double w= (-(1.0/(d2)) *dc*  (x.col(i)-y.col(j)).matrix().dot(m_normals.col(srcIds.first+i).matrix()));
+		//result.row(j) +=  weights[i] * exp(-k * (  d-dc)) *(-k-id) * w;
+		//result.row(j) += -std::complex<double>(0.,kappa)*(   (d==0) ? 0 : weights[i] *    exp(-k * (d - dc)) * (dc) / d);
+
+		//	auto kern = exp(T(0,kappa)*norm) / (4 * M_PI * norm*norm*norm)
+		//* ( nxy * (std::complex<double>(1.,0)*T(1.) - std::complex<double>(0,kappa)*norm)  - T(0,kappa)*norm*norm);
+
+
+                result.row(j) += weights[i]* ( exp(T(0, kappa) * (d - dc)) * dc / (d*d*d)
+					       * ( nxy * (std::complex<double>(1.,0)*T(1.) - std::complex<double>(0,kappa)*d)  - T(0,kappa)*d*d));
+
+		
 		//exp(-k * (d - dc))*dc * (-1.0 /(d*d))*(k+1.0/d)*(x(dx,i)-y(dx,j));
 		//}
 	    }
 	}
-        return result;
+        return result;        
     }
  
     inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder) const
@@ -152,14 +156,14 @@ public:
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
 	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
-	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
+	double delta=std::max( kappa*H/(order) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
 	base*=(int) ceil(delta);
 	return base;	    
     }
 
 
 private:
-    std::complex<double> k;
+    double kappa;
     PointArray m_normals;
 };
 
