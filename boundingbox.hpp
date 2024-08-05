@@ -40,6 +40,22 @@ public:
         return m;
     }
 
+    inline double distanceToBoundary( Eigen::Vector<double,DIM> p) const
+    {
+	double mD=0;
+	unsigned int n_corners=1 << DIM;
+	for (int j=0;j<n_corners;j++)
+	{
+	    Eigen::Vector<double,DIM> vertex;
+	    for(int l=0;l<DIM;l++){
+		vertex[l]= (j & 1 << l) == 0 ?  this->min()[l] : this->max()[l];
+	    }
+	    double d=(p-vertex).norm();
+	    mD=std::max(mD,d);
+	}
+	return mD;
+    }
+
     
     /*
 

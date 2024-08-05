@@ -69,9 +69,9 @@ public:
         m_numTargets = targets.cols();
         m_numSrcs = srcs.cols();
 
-	/*if(m_tolerance>0) {
-	    m_baseOrder=estimateOrder(m_tolerance);
-	    }*/
+	if(m_tolerance>0) {
+	  m_baseOrder=estimateOrder(m_tolerance);
+	}
 
 	std::cout<<"calculating interp range"<<std::endl;
 	m_src_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},
@@ -86,15 +86,19 @@ public:
 	//use n boxes randomly to estimate the interpolation error
 	const size_t level=m_src_octree->levels()-1;
 	const size_t Nboxes= m_src_octree->numBoxes(level);
-	const size_t stride= Nboxes/10;
+	const size_t sampleBoxes=10;
+	const size_t stride= Nboxes/sampleBoxes;
+
+	std::cout<<"working on level"<<level<<" "<<m_src_octree->numBoxes(level)<<std::endl;
 
 	auto order=tbb::parallel_reduce(
-					tbb::blocked_range<int>(0,Nboxes),
+					tbb::blocked_range<int>(0,sampleBoxes),
 					1,
 					[&](tbb::blocked_range<int> r, int order) {
-					    for(size_t i=r.begin();i<r.end();i+=stride)
+					    for(size_t i=r.begin();i<r.end();i++)
 					    {
-						order=std::max(order, estimateOrderOnBox(tol,level,i));
+						const size_t boxId=i*stride;
+						order=std::max(order, estimateOrderOnBox(tol,level,boxId));
 					    }
 					    return order;
 					},[](int a, int b){return std::max(a,b);});
@@ -110,12 +114,12 @@ public:
 	BoundingBox bbox = m_src_octree->bbox(level, id);
         auto center = bbox.center();
         double H = bbox.sideLength();
-        IndexRange srcs = m_src_octree->sources(level, id);
+        IndexRange srcs = m_src_octree->points(level, id);
         const size_t nS = srcs.second - srcs.first;
 
 
 	const double smax=sqrt(DIM)/DIM;
-	const double smin=H/(1.1*m_src_octree->bbox(0,0).diagonal().norm());
+	const double smin=H/(m_src_octree->bbox(0,0).distanceToBoundary(center));
 
 
 	//std::cout<<"s="<<smax<<" "<<smin<<std::endl;
@@ -123,7 +127,7 @@ public:
 	int_box.min()(0)=smin;
 	int_box.max()(0)=smax;
 	
-	const size_t n_samples=100;
+	const size_t n_samples=25;
 	//now scale to (smin,smax) x (0,PI) x (-M_PI,M_PI) (in 3d)
 	if constexpr(DIM==2) {	    
 	    int_box.min()(1)=-M_PI;
@@ -136,44 +140,43 @@ public:
 	    int_box.max()(2)=M_PI;
 	}
 
-	PointArray samplePoints(DIM,n_samples);		
+	PointArray samplePoints=PointArray::Random(DIM,n_samples);		
 	PointArray transformedSample(DIM,samplePoints.cols());
-		       
 
 	int baseOrder=0;
 	double error=std::numeric_limits<double>::max();
-	
+
 	while(error > tol && baseOrder<max_order) {
 	    ++baseOrder;
 	    const auto order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
 	    //std::cout<<"trying order"<<order<<std::endl;
 	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, baseOrder,m_base_n_elements);
 
-	    ConeDomain<DIM> grid(n_els,bbox);
+	    ConeDomain<DIM> grid(n_els,int_box);
 	    PointArray chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
 	    PointArray transformedNodes(DIM,chebNodes.cols());
-	    samplePoints=PointArray::Random(DIM,n_samples);	
-	    
+		
 	    const size_t stride=chebNodes.cols();
 	    error=0;
 	    for (int el =0;el<grid.n_elements();el++) {
 		Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Random(nS);
 		transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
 		auto data= static_cast<const Derived *>(this)->evaluateFactoredKernel
-		    (m_src_octree->sourcePoints(srcs), transformedNodes, weights, center, H);
+		    (m_src_octree->points(srcs), transformedNodes, weights, center, H,srcs);
 
 		
 		transformInterpToCart(grid.transform(el,samplePoints), transformedSample, center, H);
 
 		auto exact= static_cast<const Derived *>(this)->evaluateFactoredKernel
-		    (m_src_octree->sourcePoints(srcs), transformedSample, weights, center, H);
+		    (m_src_octree->points(srcs), transformedSample, weights, center, H,srcs);
 
+		double norm=std::max(exact.matrix().norm(),1.);
 		Eigen::Array<T,Eigen::Dynamic,DIMOUT> approx(samplePoints.cols(),DIMOUT);
 		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(samplePoints,data,approx,order);
 		exact.matrix()-=approx.matrix();
-		error=std::max(error,exact.matrix().norm());
+		error=std::max(error,exact.cwiseAbs().maxCoeff());
 	    }
-	    //std::cout<<"error2="<<error<<std::endl;;
+	    std::cout<<"error2="<<error<<" at "<<baseOrder<<std::endl;;
 	    //error=sqrt(error)/grid.n_elements();
 	    //std::cout<<"order="<<order<<" error="<<error<<std::endl;
 	}
@@ -409,7 +412,7 @@ public:
 		    }
 
                     //tmpInterpolationData =
-                    //    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_src_octree->sourcePoints(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
+                    //    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_src_octree->points(srcs), transformedNodes, new_weights.segment(srcs.first, nS), parent_center, pH);
 #else
 
 		    if(!grid.isEmpty()) {
@@ -529,7 +532,7 @@ public:
 	    const size_t nT = cousinTargets[l].second - cousinTargets[l].first;
 	    
 #ifdef CHECK_CONNECTIVITY
-	    IndexRange srcs=m_src_octree->sources(level,id);
+	    IndexRange srcs=m_src_octree->points(level,id);
 	    for (int q = cousinTargets[l].first; q < cousinTargets[l].second; q++) {
 		for (int k = srcs.first; k < srcs.second; k++) {
 		    /*if(m_connectivity(q,k)!=0) {
@@ -643,7 +646,7 @@ public:
                 const size_t el=pGrid.activeCones()[memId];
                 transformInterpToCart(pGrid.transform(el,p_chebNodes), transformedNodes, parent_center, pH);
                 parentData.values.middleRows(memId*stride,stride).matrix() +=
-                    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_src_octree->sourcePoints(srcs),
+                    static_cast<const Derived *>(this)->evaluateFactoredKernel(m_src_octree->points(srcs),
                                                                                transformedNodes,
                                                                                weights.segment(srcs.first, nS),
                                                                                parent_center, pH,srcs);
