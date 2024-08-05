@@ -25,6 +25,8 @@ class IfgfOperator
 public:
     typedef Eigen::Array<double, DIM, Eigen::Dynamic> PointArray;     //, Eigen::RowMajor?
 
+    enum RefinementType { RefineH, RefineP};
+
     IfgfOperator(long int maxLeafSize = -1, size_t order=5, size_t n_elements=1, double tolerance = -1)
     {
 	if constexpr (DIM==3) {
@@ -72,19 +74,30 @@ public:
         m_numSrcs = srcs.cols();
 
 	if(m_tolerance>0) {
-	  m_baseOrder=estimateOrder(m_tolerance);
+	    if(m_tolerance> 1e-4) 
+		m_baseOrder=4;
+	    else if(m_tolerance > 1e-10)
+		m_baseOrder=8;
+	    else
+		m_baseOrder=16;
+
+	    m_base_n_elements*=estimateRefinement(m_tolerance,RefineH);
+	    //m_baseOrder=estimateOrder(m_tolerance);
 	}
 
 
 	std::cout<<"calculating interp range"<<std::endl;
 	m_src_octree->calculateInterpolationRange([this](double H){return static_cast<Derived *>(this)->orderForBox(H, this->m_baseOrder);},
 						  [this](double H){return static_cast<Derived *>(this)->elementsForBox(H, this->m_baseOrder,this->m_base_n_elements);},*m_target_octree);
+
+	std::cout<<"done initializing"<<std::endl;
     }
 
 
-    int estimateOrder(double tol)
+    
+    int estimateRefinement(double tol,RefinementType refine)
     {
-	std::cout<<"estimating the order needed to achieve "<<tol<<std::endl;
+	std::cout<<"estimating the order needed to achieve "<<tol<< "using "<< (refine==RefineH ? "h":"p")<<"-refinement"<<std::endl;
 	//use n boxes randomly to estimate the interpolation error
 	const size_t level=m_src_octree->levels()-1;
 	const size_t Nboxes= m_src_octree->numBoxes(level);
@@ -93,43 +106,46 @@ public:
 
 	std::cout<<"working on level"<<level<<" "<<m_src_octree->numBoxes(level)<<std::endl;
 
-	auto order=tbb::parallel_reduce(
+	auto ref=tbb::parallel_reduce(
 					tbb::blocked_range<int>(0,sampleBoxes),
 					1,
 					[&](tbb::blocked_range<int> r, int order) {
 					    for(size_t i=r.begin();i<r.end();i++)
 					    {
 						const size_t boxId=i*stride;
-						order=std::max(order, estimateOrderOnBox(tol,level,boxId));
+						order=std::max(order, estimateRefinementOnBox(tol,level,boxId,refine));
 					    }
 					    return order;
 					},[](int a, int b){return std::max(a,b);});
 
-	std::cout<<"using order="<<order<<std::endl;;
-	return order;
+	std::cout<<"using refinemnt="<<ref<<std::endl;;
+	return ref;
     }
 
-    int estimateOrderOnBox(double tol,size_t level,size_t id)
+    int estimateRefinementOnBox(double tol,size_t level,size_t id, RefinementType refine)
     {
-	const int max_order=15;
+	const int maxR=refine== RefineH ? 4 : 15;
 	
 	BoundingBox bbox = m_src_octree->bbox(level, id);
         auto center = bbox.center();
         double H = bbox.sideLength();
         IndexRange srcs = m_src_octree->points(level, id);
         const size_t nS = srcs.second - srcs.first;
+	
+	double smax=sqrt(DIM)/DIM;
+	//if the sources and targets are well-separated we don't have to cover the near field 
+	const double dist=m_src_octree->bbox(0,0).exteriorDistance(m_target_octree->bbox(0,0));
+	if(dist >0) {
+	    smax=std::min(smax, H/dist);
+	}
+	const double smin=H/(m_target_octree->bbox(0,0).distanceToBoundary(center));
 
-
-	const double smax=sqrt(DIM)/DIM;
-	const double smin=H/(m_src_octree->bbox(0,0).distanceToBoundary(center));
-
-
-	//std::cout<<"s="<<smax<<" "<<smin<<std::endl;
+	
 	BoundingBox<DIM> int_box;
 	int_box.min()(0)=smin;
 	int_box.max()(0)=smax;
 	
-	const size_t n_samples=50;
+	const size_t n_samples=150;
 	//now scale to (smin,smax) x (0,PI) x (-M_PI,M_PI) (in 3d)
 	if constexpr(DIM==2) {	    
 	    int_box.min()(1)=-M_PI;
@@ -145,14 +161,20 @@ public:
 	PointArray samplePoints=PointArray::Random(DIM,n_samples);		
 	PointArray transformedSample(DIM,samplePoints.cols());
 
-	int baseOrder=2;
+	int base=0;
 	double error=std::numeric_limits<double>::max();
+	int new_p=1;
+	int new_n_els=0;
 
-	while(error > tol && baseOrder<max_order) {
-	    ++baseOrder;
-	    const auto order = static_cast<Derived *>(this)->orderForBox(H, baseOrder);
+	while(error > tol && base<maxR) {
+	    ++base;
+	    new_p=refine==RefineP ? m_baseOrder+base: m_baseOrder;
+	    new_n_els=refine==RefineH ?  pow(2,base-1) : 1;
+	    
+		
+	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p );
 	    //std::cout<<"trying order"<<order<<std::endl;
-	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, baseOrder,m_base_n_elements);
+	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, new_p, m_base_n_elements * new_n_els );
 
 	    ConeDomain<DIM> grid(n_els,int_box);
 	    PointArray chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
@@ -179,12 +201,12 @@ public:
 		exact.matrix()-=approx.matrix();
 		error=std::max(error,exact.cwiseAbs().maxCoeff()/norm);
 	    }
-	    //std::cout<<"error2="<<error<<" at "<<baseOrder<<std::endl;;
+	    //std::cout<<"error2="<<error<<" at "<<base<<std::endl;;
 	    //error=sqrt(error)/grid.n_elements();
 	    //std::cout<<"order="<<order<<" error="<<error<<std::endl;
 	}
-
-	return baseOrder;
+	
+	return refine == RefineH ? new_n_els : new_p;
     }
     
     
