@@ -8,13 +8,13 @@
 
 namespace Util
 {
-template <class ExecutionPolicy, typename RandomIt, class Compare>
-auto sort_with_permutation(ExecutionPolicy&& policy, RandomIt cbegin, RandomIt cend, Compare comp)
+template <typename RandomIt, class Compare>
+auto sort_with_permutation( RandomIt cbegin, RandomIt cend, Compare comp)
 {
     auto len = std::distance(cbegin, cend);
     std::vector<size_t> perm(len);
     std::iota(perm.begin(), perm.end(), 0U);
-    std::sort(policy, perm.begin(), perm.end(),
+    std::sort(perm.begin(), perm.end(),
     [&](const size_t &a, const size_t &b) {
         return comp(*(cbegin + a), *(cbegin + b));
     });

@@ -8,6 +8,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/global_control.h>
 #include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_reduce.h>
 
 #include <fstream>
 #include <iostream>
@@ -745,7 +746,7 @@ public:
 	    for(size_t idx=0;idx<N;idx++) {
 		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	    }
-	    std::vector<size_t> perm=Util::sort_with_permutation(std::execution::par,elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
+	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
 	    PointArray tmp=Util::copy_with_permutation(transformed,perm);
 	    size_t idx=0;
 	    while (idx<N)
@@ -828,7 +829,7 @@ public:
 	    for(size_t idx=0;idx<N;idx++) {
 		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	    }
-	    std::vector<size_t> perm=Util::sort_with_permutation(std::execution::par,elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
+	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
 	    PointArray tmp=Util::copy_with_permutation(transformed,perm);
 	    size_t idx=0;
 	    while (idx<N)
