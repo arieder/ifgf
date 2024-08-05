@@ -24,12 +24,18 @@ public:
 
     void init(const PointArray &srcs, const PointArray targets, const PointArray& normals)
     {
-	IfgfOperator<T,dim,1,DoubleLayerHelmholtzIfgfOperator<dim> >::init(srcs,targets);
-
-	m_normals=Util::copy_with_permutation(normals, this->src_octree()->permutation());
+	m_normals=normals;
+	IfgfOperator<T,dim,1,CombinedFieldHelmholtzIfgfOperator<dim> >::init(srcs,targets);
+	
     }
 
-    
+    //once the octree is ready, we can reorder it such that the morton-order is observed
+    void onOctreeReady()
+    {
+	m_normals=Util::copy_with_permutation(m_normals, this->src_octree().permutation());
+    }
+   
+   
     
     typedef std::complex<double > T ;
 
