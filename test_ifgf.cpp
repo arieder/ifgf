@@ -31,7 +31,6 @@ std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
 #include <tbb/global_control.h>
 #include <fenv.h>
 
-#include <coz.h>
 
 
 int main()
@@ -46,14 +45,14 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,1e-8);
+    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,-1e-8);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray normals = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
 
 
-    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     op.init(srcs, targets,normals);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);

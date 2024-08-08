@@ -14,6 +14,9 @@
 
 #include "cone_domain.hpp"
 
+#ifdef USE_NGSOLVE
+    #include </home/arieder/devel/install/include/core/ngcore.hpp>
+#endif
 
 namespace ChebychevInterpolation
 {
@@ -23,7 +26,13 @@ namespace ChebychevInterpolation
     {
 	std::cout<<"new chebnodes"<<n<<std::endl;
         assert(N_AT_COMPILE_TIME==-1 || n==N_AT_COMPILE_TIME);
-        return (Eigen::Array<T, N_AT_COMPILE_TIME, 1>::LinSpaced((int) n, 0, M_PI)).cos(); 
+        //return (Eigen::Array<T, N_AT_COMPILE_TIME, 1>::LinSpaced((int) n, 0, M_PI)).cos();
+	Eigen::Array<T, N_AT_COMPILE_TIME, 1> nodes(n);
+	 
+	for(int i=0;i<n;i++) {
+	    nodes[i]=cos((2.*i+1.0)/(2.*n)*M_PI);
+	}
+	return nodes;
     }
 
 
@@ -138,6 +147,123 @@ namespace ChebychevInterpolation
 	nodes=a*nodes+b;
     }
 
+    
+    
+    template <typename T,int DIM>
+    inline void chebtransform(const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> >& src,
+			      Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > dest,
+			      const Eigen::Ref<const Eigen::Vector<int,DIM> >& ns
+			      )
+    {
+	//evaluate all line-functions
+	int nsigma=ns.head(DIM-1).prod();
+	if constexpr(DIM==1) {
+	    nsigma=1;
+	}
+	const int stride=nsigma;
+	dest.fill(0);
+
+	//std::cout<<"ns="<<ns<<std::endl;
+	//std::cout<<"nsigma="<<nsigma<<std::endl;
+	if constexpr(DIM==1) {	   
+	    //do a straight forwad summation of the innermost dimension
+	    for(size_t idx=0;idx<ns[0];idx++) {
+		for(size_t sigma=0;sigma<ns[0];sigma++)  {
+		    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[0]));
+		    dest.segment(idx*stride,nsigma)+=src.segment(sigma*stride,nsigma)*Td;
+		}
+		dest.segment(idx*stride,nsigma)*=(idx ==0 ? 1.:2. )*1./ns[0];
+	    }
+	    //std::cout<<"done inner"<<std::endl;
+	}else {
+#if 0
+	    std::cout<<"slow for testing"<<std::endl;
+	    Eigen::Array<T, Eigen::Dynamic,1> D(dest.rows());
+	    D.fill(0);
+	    for(size_t idx=0;idx<ns[0];idx++) {
+		for(size_t idx2=0;idx2<ns[1];idx2++) {		
+		    for(size_t sigma=0;sigma<ns[0];sigma++)  {
+			for(size_t sigma2=0;sigma2<ns[1];sigma2++)  {
+			    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[0]));
+			    const double Td2=cos(idx2*M_PI*(2.*sigma2+1.)/(2.*ns[0]));
+			    D(idx*ns[1]+ idx2)+=src(sigma*ns[1]+sigma2)*Td*Td2 * ((idx ==0 ? 1.:2. )*1./ns[0])*((idx2 ==0 ? 1.:2. )*1./ns[1]);
+			}
+		    }		    
+		}
+	    }
+#endif
+	    Eigen::Array<T, Eigen::Dynamic, 1> M(ns.prod());
+	    //std::cout<<"building m"<<DIM<<std::endl;
+	    for(size_t idx=0;idx<ns[DIM-1];idx++) {
+		//std::cout<<"idx"<<idx<<" "<<idx*stride<<" "<<M.size()<<" "<<src.size()<<" "<<nsigma<<std::endl;
+		chebtransform<T,DIM-1>(src.segment(idx*stride,nsigma),M.segment(idx*stride,nsigma),ns.template head<DIM-1>());
+	    }
+
+	    for(size_t idx=0;idx<ns[DIM-1];idx++) {
+		for(size_t sigma=0;sigma<ns[DIM-1];sigma++)  {
+		    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[DIM-1]));
+		    dest.segment(idx*stride,nsigma)+=M.segment(sigma*stride,nsigma)*Td;
+		}	    
+		dest.segment(idx*stride,nsigma)*=(idx ==0 ? 1:2 )*1./ns[DIM-1];
+	    }
+
+	    //std::cout<<"err sum_factor="<<(D-dest).matrix().norm()<<std::endl;
+	}
+    }
+
+
+    
+    template <typename T, int POINTS_AT_COMPILE_TIME, int DIM, unsigned int DIMOUT,  typename Derived1, typename Derived2>
+    inline Eigen::Array<T,POINTS_AT_COMPILE_TIME,DIMOUT> evaluate_clenshaw(const Eigen::ArrayBase<Derived1>  &x,
+		const Eigen::ArrayBase<Derived2> &vals,
+		const Eigen::Ref<const Eigen::Vector<int,DIM> >& ns )
+    {
+	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b1(x.cols(),DIMOUT);
+	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b2(x.cols(),DIMOUT);
+	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> tmp(x.cols(),DIMOUT);
+
+
+	if constexpr (DIM==1)
+	{	    
+	    b1.fill(0.);
+	    b2.fill(0.);
+
+	    for(size_t j=ns[0]-1;j>0;j--) {
+		tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
+
+		b2=b1;
+		b1=tmp;
+	    }
+	    
+	    return (b1*x.row(0).transpose()-b2)+vals(0);
+
+	}else //recurse down
+	{
+	    
+	    b1.fill(0);
+	    b2.fill(0);
+	    const size_t stride = ns.head(DIM-1).prod();
+
+	    
+	    auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+									  vals.segment(0 * stride, stride),
+									       ns.template head<DIM-1>()).eval();
+
+	    for(size_t j=ns[0]-1;j>0;j--) {
+		tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+										   vals.segment(j * stride, stride),
+										   ns.template head<DIM-1>());
+		tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
+		b2=b1;
+		b1=tmp;
+	    }
+
+	    return (b1*x.row(DIM-1).transpose()-b2) + c0;
+
+	}
+    }	
+    
+
 
     //3d evaluation code
     template <typename T, typename PointScalarType, int DIMOUT>
@@ -148,10 +274,24 @@ namespace ChebychevInterpolation
              const Eigen::Vector<int, 3>& ns,
              BoundingBox<3> box = BoundingBox<3>()  )
     {
-        const int DIM = 3;
-        Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(x.cols(), DIMOUT);
+	const int DIM=3;
 
+
+
+#ifdef USE_NGSOLVE	
+      static ngcore::Timer t("ngbem ifgf cheb::eval");
+      static ngcore::Timer tmult("ngbem ifgf cheb::eval mult");
+      static ngcore::Timer tmultx("ngbem ifgf cheb::eval multx");
+      static ngcore::Timer tmultyz("ngbem ifgf cheb::eval multyz");                  
+      ngcore::RegionTimer reg(t);
+
+      t.AddFlops (ns[0]*ns[1]*ns[2]*x.cols()*DIMOUT);
+#endif
+
+        Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(x.cols(), DIMOUT);
         result.fill(0);
+
+	
 
         assert(DIM == x.rows());
         Eigen::Array<PointScalarType, Eigen::Dynamic, 1> nodes1 =
@@ -171,20 +311,50 @@ namespace ChebychevInterpolation
         Eigen::Array<PointScalarType, Eigen::Dynamic, Eigen::Dynamic> ydiff = computeDiffVector(ns[1], x.row(1), nodes2);
         Eigen::Array<PointScalarType, Eigen::Dynamic, Eigen::Dynamic> zdiff = computeDiffVector(ns[2], x.row(2), nodes3);
 
+        // std::cout << "DIMPUT = " << DIMOUT << std::endl;
+        // std::cout << "shape xdiff = " << xdiff.rows() << " " << xdiff.cols() << std::endl;
+        // std::cout << "shape ydiff = " << ydiff.rows() << " " << ydiff.cols() << std::endl;
+        // std::cout << "shape zdiff = " << zdiff.rows() << " " << zdiff.cols() << std::endl;
+
+#ifdef USE_NGSOLVE	
+        tmult.Start();
+#endif
         size_t idx=0;
+
+        Eigen::Array<T, Eigen::Dynamic, DIMOUT> mytmp(x.cols(), DIMOUT);
+        mytmp.fill(0);
+	
+        //std::cout << "type diff = " << typeid(x(0,0)).name() << ", type vals = " << typeid(vals(0,0)).name() << std::endl;
+        
         for (size_t i = 0; i < ns[2]; i++) {
             for (size_t j = 0; j < ns[1]; j++) {	       
 		// we vectorize the innermost loop. This part computes
 		// result+=\sum_{k} vals[i,j,k]*xdiff[l,:]ydiff[j,:] zdiff[i,:]
-		auto tmp = (xdiff.matrix() * vals.middleRows(idx, ns[0]).matrix())
-			       .array(); // nom.matrix()).array();
+#ifdef USE_NGSOLVE
+              tmultx.Start();
+              tmultx.AddFlops(xdiff.cols()*xdiff.rows());
+#endif
+              // auto tmp = (xdiff.matrix() * vals.middleRows(idx, ns[0]).matrix())
+              // .array(); // nom.matrix()).array();
+              mytmp =  (xdiff.matrix() * vals.middleRows(idx, ns[0]).matrix()).array();
+#ifdef USE_NGSOLVE	      
+              tmultx.Stop();
+              tmultyz.Start();
+#endif
 		for (int l = 0; l < DIMOUT; l++) {
-		  result.col(l) += (zdiff.col(i) * ydiff.col(j)) * tmp.col(l);
+		  result.col(l) += (zdiff.col(i) * ydiff.col(j)) * mytmp.col(l);
 		}
+#ifdef USE_NGSOLVE
+              tmultyz.Stop();
+
+#endif
 		idx+=ns[0];
             }
         }
-
+#ifdef USE_NGSOLVE
+        tmult.Stop();
+#endif
+        
 	Eigen::Array<PointScalarType, -1,1> w1 = xdiff.rowwise().sum().transpose();
         Eigen::Array<PointScalarType, -1,1> w2 = ydiff.rowwise().sum().transpose();
         Eigen::Array<PointScalarType, -1,1> w3 = zdiff.rowwise().sum().transpose();
@@ -248,6 +418,36 @@ namespace ChebychevInterpolation
         return result;
     }
 
+    template <typename T, unsigned int DIM, char package, typename T1, typename T2, typename T3>
+    inline int __eval(const T1  &points,
+		      const T2 &interp_values,
+		      const Eigen::Vector<int,DIM>& ns,
+		      T3 &dest, size_t i, size_t n_points)
+    {
+	const int DIMOUT=1;
+	const unsigned int packageSize = 1 << package;
+	const size_t np = n_points / packageSize;
+	n_points = n_points % packageSize;
+			 
+		      
+	Eigen::Array<T,DIM,packageSize> tmp;
+
+	for (int j = 0; j < np; j++) {
+	    tmp=points.middleCols(i, packageSize);
+	    dest.segment(i, packageSize) = ChebychevInterpolation::evaluate_clenshaw<T, packageSize,  DIM, DIMOUT>(tmp, interp_values,ns);
+	    i += packageSize;
+	}
+	if constexpr(package > 0) {
+	    if (n_points > 0) {
+		i = __eval < T,  DIM, package - 1 > (points, interp_values, ns, dest, i, n_points);
+	    }
+	}
+
+	return i;
+
+    }
+    
+
     template <typename T, unsigned int DIM, unsigned int DIMOUT>
     inline void parallel_evaluate(
 				  const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic> >
@@ -258,7 +458,54 @@ namespace ChebychevInterpolation
 				  const Eigen::Vector<int, DIM>& ns,
 				  BoundingBox<DIM> box = BoundingBox<DIM>())
     {
-        dest = evaluate(points, interp_values, ns,box);
+	
+	Eigen::Array<T,DIM,Eigen::Dynamic> points0(DIM,points.cols());
+
+	const auto a=0.5*(box.max()-box.min()).array();
+	const auto b=0.5*(box.max()+box.min()).array();
+
+	if(!box.isNull()) {
+	    points0.array()=(points.array().colwise()-b).colwise()/a;
+	}else {
+	    points0=points;
+	}
+
+	//std::cout<<"ev"<<nodes[DIM-1]<<std::endl;
+
+	//dest.resize(DIMOUT,points.cols());
+        
+	//template <typename T, int N_POINTS_AT_COMPILE_TIME, unsigned int DIM, unsigned int DIMOUT, typename Derived1, typename Derived2, int N_AT_COMPILE_TIME, int... OTHER_NS>
+
+#ifdef USE_NGSOLVE
+	static ngcore::Timer t("ngbem ifgf cheb::eval");
+
+	ngcore::RegionTimer reg(t);
+	t.AddFlops (ns[0]*ns[1]*ns[2]*points.cols()*DIMOUT);
+#endif
+
+	for(int i=0;i<points.cols();)
+	{
+	    size_t n_points = points.cols();
+	    //We do packages of size 4, 2, 1
+	    i = __eval<T, DIM, 3>(points0, interp_values, ns, dest, i, n_points);
+	    //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
+	    //assert(i == r.end());
+	}
+	    
+	//tbb::parallel_for(tbb::blocked_range<size_t>(0, points.cols(), 64),
+	//                 partial_loop);
+	//partial_loop(tbb::blocked_range<size_t>(0,points.cols()));
+    
+	
+	//dest = ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points0,interp_values,ns);
+	/*for (int j = 0; j < points0.cols(); j++) {
+	    //dest = ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points,interp_values,ns);
+	    dest(j) = ChebychevInterpolation::evaluate_clenshaw<T,1,DIM,DIMOUT>(points0.col(j),interp_values,ns)[0];
+	    //ChebychevInterpolation::evaluate_slow<T, 1,  DIM,1>(points.col(j), interp_values,nodes,ns)[0];	    
+	    }*/
+
+	//std::cout<<"done ev"<<std::endl;
+
     }
 
     

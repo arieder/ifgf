@@ -16,7 +16,7 @@
 
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
-#define  RECURSIVE_MULT
+//#define  RECURSIVE_MULT
 
 #include <memory>
 
@@ -282,13 +282,18 @@ public:
 	    interpolationData[pId].order = order;                        
         }
 
+        
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numBoxes(level)),
         [&](tbb::blocked_range<size_t> r) {
             for(size_t id=r.begin();id<r.end();id++) {
                 recursive_mult(id, level, new_weights,result, interpolationData[m_src_octree->parentId(level, id)],
 			       tmp_result.local(), resultMutex, transformedNodes.local());                
             }});
-	
+        
+        /*for(size_t id=0; id < m_src_octree->numBoxes(level); id++)
+          recursive_mult(id, level, new_weights,result, interpolationData[m_src_octree->parentId(level, id)],
+	  tmp_result.local(), resultMutex, transformedNodes.local());                */
+        
 	level--;
         std::cout<<"now proceeding iteratively"<<level<<std::endl;
 #endif
@@ -339,9 +344,19 @@ public:
 			    ->evaluateFactoredKernel(m_src_octree->points(srcs),
 						     transformedNodes.local(),
 						     new_weights.segment(srcs.first, nS), center, H,srcs);
+
+			
 		    }
 		}
 #endif
+		//before we can use the interpolation data, we habe to run a chebychev transform on it
+		const size_t stride=chebNodes.cols();
+		Eigen::Array<T,Eigen::Dynamic,DIMOUT> tmpData(stride,DIMOUT);
+		for (int memId =0;memId<interpolationData[i].grid.activeCones().size();memId++) {
+
+		    ChebychevInterpolation::chebtransform<T,DIM>(interpolationData[i].values.middleRows(memId*stride,stride),tmpData,order);
+		    interpolationData[i].values.middleRows(memId*stride,stride)=tmpData;
+		}
 		evaluateFarField(level,i, new_weights, result, interpolationData[i], tmp_result.local(), resultMutex);
 
 
@@ -490,6 +505,11 @@ public:
 			  PointArray &transformedNodes
 			  )
     {
+#ifdef USE_NGSOLVE
+      static ngcore::Timer t("ngbem eval Near Field");
+      ngcore::RegionTimer reg(t);
+#endif
+      
 	IndexRange srcs = m_src_octree->points(level, id);
 	const size_t nS = srcs.second - srcs.first;
 
@@ -548,6 +568,13 @@ public:
 			  tbb::queuing_mutex& resultMutex
 			 )
     {
+#ifdef USE_NGSOLVE
+      static ngcore::Timer t("ngbem eval Far Field");
+      ngcore::RegionTimer reg(t);
+
+
+#endif
+      
 	BoundingBox bbox = m_src_octree->bbox(level, id);
         auto center = bbox.center();
         double H = bbox.sideLength();
@@ -631,7 +658,7 @@ public:
                 const size_t el=grid.activeCones()[memId];
 		
                 transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
-                storage.values.middleRows(memId*stride,stride) =
+                auto values =
                     static_cast<const Derived *>(this)->evaluateFactoredKernel
                     (m_src_octree->points(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H,srcs);
             }
@@ -645,6 +672,16 @@ public:
                 recursive_mult(c_id,level+1,weights,result,storage,tmp_result,resultMutex,transformedNodes);
             }
         }
+
+	//before we can use the interpolation data, we habe to run a chebychev transform on it
+	const size_t stride=chebNodes.cols();
+	Eigen::Array<T,Eigen::Dynamic,DIMOUT> tmpData(stride,DIMOUT);
+	for (int memId =0;memId<storage.grid.activeCones().size();memId++) {
+	    
+	    ChebychevInterpolation::chebtransform<T,DIM>(storage.values.middleRows(memId*stride,stride),tmpData,order);
+	    storage.values.middleRows(memId*stride,stride)=tmpData;
+	}
+
 
         //Now that sthe Interpolation data storage has been prepared, we can use it to evaluate the field at the cousin nodes
 	evaluateFarField(level,id, weights, result, storage, tmp_result, resultMutex);
@@ -664,7 +701,6 @@ public:
 
 
         const auto& pGrid=parentData.grid;
-        const size_t stride=p_chebNodes.cols();
 
 #ifdef TWO_GRID_ONLY              
         if(!pGrid.isEmpty()) {
@@ -694,7 +730,7 @@ public:
             }
 	    
 	    transferInterp(storage, transformedNodes, center, H, parent_center, pH,
-                               tmp_result);
+			   tmp_result);
 
 	    idx=0;
 	    for (int memId =0;memId<pGrid.activeCones().size();memId++) {
@@ -767,11 +803,8 @@ public:
 	    result=Util::copy_with_inverse_permutation(result,perm);
 	}
 	
-
-
-	
+        
 	static_cast<const Derived *>(this)->transfer_factor(targets, xc, H, p_xc, pH, result);	
-
     }
     
     void evaluateFromInterp(const ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& data,
@@ -801,7 +834,7 @@ public:
 	}*/
 
 
-	if(false) {
+	if(true) {
 	    size_t idx=0;
 	    while (idx<N)
 	    {

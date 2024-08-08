@@ -25,7 +25,7 @@ public:
     void init(const PointArray &srcs, const PointArray targets, const PointArray& normals)
     {
 	m_normals=normals;
-	IfgfOperator<T,dim,1,CombinedFieldHelmholtzIfgfOperator<dim> >::init(srcs,targets);
+	IfgfOperator<T,dim,1,DoubleLayerHelmholtzIfgfOperator<dim> >::init(srcs,targets);
 	
     }
 

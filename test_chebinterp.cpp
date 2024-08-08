@@ -9,24 +9,26 @@
 
 int main()
 {
-    const int N = 10;
-    const int dim = 2;
+    const int N = 1000;
+    const int dim = 3;
 
     typedef std::complex<double> T;
-    Eigen::Array<double, dim, Eigen::Dynamic> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N)+0.01;
+    Eigen::Array<double, dim, Eigen::Dynamic> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N);
 
     const double H = 0.1;
     const double k = 1;
     typedef Eigen::Vector<double, dim> Point;
-    const Point xc{0, H / 2.0};
+    //const Point xc{ H / 2.0};
     auto kernel = [&](auto pnt) {
         auto d=pnt.matrix().squaredNorm();
-	return exp(d)/(d+1);
+	return exp(d+pnt[2])/(d+1+pnt[0]+1);
     };
 
-    const int p = 15;
-    Eigen::Vector<int, 2> ns{p-2,p};
-    Eigen::Array<double, dim, Eigen::Dynamic> interp_nodes = ChebychevInterpolation::chebnodesNd<double,-1,-1>(ns);
+    const int p = 25;
+    Eigen::Vector<int, dim> ns;
+    ns.fill(p);
+    ns[0]-=2;
+    Eigen::Array<double, dim, Eigen::Dynamic> interp_nodes = ChebychevInterpolation::chebnodesNd<double,-1,-1,-1>(ns);
 
     Eigen::Array<T, Eigen::Dynamic, 1> interp_values(interp_nodes.cols());
     interp_values.fill(0);
@@ -35,6 +37,9 @@ int main()
 
         interp_values[i] = kernel(pnt);
     }
+
+    Eigen::Array<T, Eigen::Dynamic, 1> transformed_values(interp_nodes.cols());
+    ChebychevInterpolation::chebtransform<T,dim>(interp_values,transformed_values, ns);
     std::cout<<"1"<<std::endl;
 
     Eigen::Array<T, Eigen::Dynamic, 1> values(N);
@@ -45,7 +50,8 @@ int main()
     Eigen::Array<T, Eigen::Dynamic, 1> approx_values(N);
     //Eigen::internal::set_is_malloc_allowed(false);
 
-    ChebychevInterpolation::parallel_evaluate<T, dim,1>(points, interp_values, approx_values,p);
+
+    ChebychevInterpolation::parallel_evaluate<T, dim,1>(points, transformed_values, approx_values,ns);
 
     //Eigen::internal::set_is_malloc_allowed(true);
 
