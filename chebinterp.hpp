@@ -212,12 +212,14 @@ namespace ChebychevInterpolation
     }
 
 
+
     
     template <typename T, int POINTS_AT_COMPILE_TIME, int DIM, unsigned int DIMOUT,  typename Derived1, typename Derived2>
     inline Eigen::Array<T,POINTS_AT_COMPILE_TIME,DIMOUT> evaluate_clenshaw(const Eigen::ArrayBase<Derived1>  &x,
 		const Eigen::ArrayBase<Derived2> &vals,
 		const Eigen::Ref<const Eigen::Vector<int,DIM> >& ns )
     {
+	assert(DIMOUT==1); //For now only 1d output works. 
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b1(x.cols(),DIMOUT);
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b2(x.cols(),DIMOUT);
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> tmp(x.cols(),DIMOUT);
@@ -225,10 +227,10 @@ namespace ChebychevInterpolation
 
 	if constexpr (DIM==1)
 	{	    
-	    b1.fill(0.);
-	    b2.fill(0.);
+	    b1=2.*x.row(0)*vals(ns[0]-1)+vals(ns[0]-2);
+	    b2.fill(vals(ns[0]-1));
 
-	    for(size_t j=ns[0]-1;j>0;j--) {
+	    for(size_t j=ns[0]-3;j>0;j--) {
 		tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
 
 		b2=b1;
@@ -238,21 +240,25 @@ namespace ChebychevInterpolation
 	    return (b1*x.row(0).transpose()-b2)+vals(0);
 
 	}else //recurse down
-	{
-	    
-	    b1.fill(0);
-	    b2.fill(0);
-	    const size_t stride = ns.head(DIM-1).prod();
+	{	   	    
+	    const size_t stride = ns.head(DIM-1).prod();    
+	    b2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+									  vals.segment((ns[0]-1) * stride, stride),
+									  ns.template head<DIM-1>()).eval();
+	    auto cn2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+										vals.segment((ns[0]-2) * stride, stride),
+										ns.template head<DIM-1>()).eval();
 
-	    
+
+	    b1=2.*b2*x.row(DIM-1).transpose()+cn2;
+
 	    auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-									  vals.segment(0 * stride, stride),
+									       vals.segment(0 * stride, stride),
 									       ns.template head<DIM-1>()).eval();
-
-	    for(size_t j=ns[0]-1;j>0;j--) {
+	    for(size_t j=ns[0]-3;j>0;j--) {
 		tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										   vals.segment(j * stride, stride),
-										   ns.template head<DIM-1>());
+										vals.segment(j * stride, stride),
+										ns.template head<DIM-1>());
 		tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
 		b2=b1;
 		b1=tmp;
@@ -430,7 +436,7 @@ namespace ChebychevInterpolation
 	n_points = n_points % packageSize;
 			 
 		      
-	Eigen::Array<T,DIM,packageSize> tmp;
+	Eigen::Array<double,DIM,packageSize> tmp;
 
 	for (int j = 0; j < np; j++) {
 	    tmp=points.middleCols(i, packageSize);
@@ -459,7 +465,7 @@ namespace ChebychevInterpolation
 				  BoundingBox<DIM> box = BoundingBox<DIM>())
     {
 	
-	Eigen::Array<T,DIM,Eigen::Dynamic> points0(DIM,points.cols());
+	Eigen::Array<double,DIM,Eigen::Dynamic> points0(DIM,points.cols());
 
 	const auto a=0.5*(box.max()-box.min()).array();
 	const auto b=0.5*(box.max()+box.min()).array();
@@ -483,21 +489,33 @@ namespace ChebychevInterpolation
 	t.AddFlops (ns[0]*ns[1]*ns[2]*points.cols()*DIMOUT);
 #endif
 
-	for(int i=0;i<points.cols();)
-	{
-	    size_t n_points = points.cols();
-	    //We do packages of size 4, 2, 1
-	    i = __eval<T, DIM, 3>(points0, interp_values, ns, dest, i, n_points);
+
+	//for(int i=0;i<points.cols();)
+	//{
+	size_t n_points = points.cols();
+	//We do packages of size 4, 2, 1
+	__eval<T, DIM, 5>(points0, interp_values, ns, dest, 0, n_points);
 	    //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
 	    //assert(i == r.end());
-	}
+	 //}
 	    
 	//tbb::parallel_for(tbb::blocked_range<size_t>(0, points.cols(), 64),
 	//                 partial_loop);
 	//partial_loop(tbb::blocked_range<size_t>(0,points.cols()));
-    
+
+        /*Eigen::Array<double, -1, DIMOUT> v_r=interp_values.real();
+        Eigen::Array<double, -1, DIMOUT> v_i=interp_values.imag();
+        auto dest1 =
+ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_r,ns);
+        auto dest2 =
+ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_i,ns);
+
+
+        dest=dest1+T(0,1)*dest2;
+	*/
+	//dest= ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points0,interp_values,ns);
 	
-	//dest = ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points0,interp_values,ns);
+	
 	/*for (int j = 0; j < points0.cols(); j++) {
 	    //dest = ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points,interp_values,ns);
 	    dest(j) = ChebychevInterpolation::evaluate_clenshaw<T,1,DIM,DIMOUT>(points0.col(j),interp_values,ns)[0];

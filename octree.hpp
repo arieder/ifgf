@@ -354,10 +354,12 @@ public:
 		if(node==0 || node->pntRange().first==node->pntRange().second)
 		    continue;
 
-
 		const Point xc=node->boundingBox().center();
+		
 		const double H=node->boundingBox().sideLength();
 		const std::vector<IndexRange> farTargets=node->farTargets();
+#ifdef EXACT_INTERP_RANGE
+
 		
 		for(const IndexRange& iR : farTargets)
 		{
@@ -370,7 +372,7 @@ public:
 			box.extend(s); //make sure the target is in the interpolation domain
 		    }
 		}
-
+		
 		BoundingBox<DIM> pBox;
 		std::shared_ptr<const OctreeNode> parent=node->parent().lock();
 		//now also add all the parents targets	       
@@ -409,7 +411,45 @@ public:
 		    box.extend((box.min().array()-1e-06).matrix());
 		    box.extend((box.max().array()+1e-06).matrix());
 		}
+#else
+
+		//just use a default value for the boxes
+
+		double smax=sqrt(DIM)/DIM;
+		//if the sources and targets are well-separated we don't have to cover the near field 
+		const double dist=bbox(0,0).exteriorDistance(target.bbox(0,0));
+		if(dist >0) {
+		    smax=std::min(smax, H/dist);
+		}
+		const double smin=1e-4;//H/(m_diameter+dist+target.m_diameter);
+
 		
+		box.min()(0)=smin;
+		box.max()(0)=smax;
+
+			
+		if constexpr(DIM==2) {	    
+		    box.min()(1)=-M_PI;
+		    box.max()(1)=M_PI;
+		}else{
+		    box.min()(1)=0;
+		    box.max()(1)=M_PI;
+			    
+		    box.min()(2)=-M_PI;
+		    box.max()(2)=M_PI;
+		}
+
+		
+		    
+		BoundingBox<DIM> pBox;
+		std::shared_ptr<const OctreeNode> parent=node->parent().lock();
+		//now also add all the parents targets	       
+		if(parent && parentHasFarTargets(node))
+		{	    
+		    pBox=parent->interpolationRange();
+		}
+		
+#endif		
 
 		ConeDomain<DIM> domain(N_for_H(H),box);
 		if(N_for_H(H)!=oldN) {

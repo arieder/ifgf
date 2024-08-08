@@ -16,7 +16,7 @@
 
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
-//#define  RECURSIVE_MULT
+#define  RECURSIVE_MULT
 
 #include <memory>
 
@@ -658,7 +658,7 @@ public:
                 const size_t el=grid.activeCones()[memId];
 		
                 transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
-                auto values =
+		storage.values.middleRows(memId*stride,stride)=
                     static_cast<const Derived *>(this)->evaluateFactoredKernel
                     (m_src_octree->points(srcs), transformedNodes, weights.segment(srcs.first, nS), center, H,srcs);
             }
@@ -681,6 +681,7 @@ public:
 	    ChebychevInterpolation::chebtransform<T,DIM>(storage.values.middleRows(memId*stride,stride),tmpData,order);
 	    storage.values.middleRows(memId*stride,stride)=tmpData;
 	}
+	
 
 
         //Now that sthe Interpolation data storage has been prepared, we can use it to evaluate the field at the cousin nodes

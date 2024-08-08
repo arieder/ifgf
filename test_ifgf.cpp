@@ -52,7 +52,7 @@ int main()
     PointArray targets = (PointArray::Random(dim, N).array());
 
 
-    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     op.init(srcs, targets,normals);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
