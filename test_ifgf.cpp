@@ -38,21 +38,22 @@ int main()
     
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
 
-    const int N = 1000;
+    const int N = 100000;
 
 
     //Eigen::initParallel();
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,-1e-8);
+    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,250,10,2,-1e-8);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray normals = (PointArray::Random(dim,N).array());
     PointArray targets = (PointArray::Random(dim, N).array());
 
 
-    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+
+    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
     op.init(srcs, targets,normals);
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);

@@ -17,6 +17,8 @@
 #include <tbb/spin_mutex.h>
 typedef std::pair<size_t, size_t> IndexRange;
 
+//#define  EXACT_INTERP_RANGE
+
 
 template<typename T, size_t DIM>
 class Octree
@@ -421,7 +423,16 @@ public:
 		if(dist >0) {
 		    smax=std::min(smax, H/dist);
 		}
-		const double smin=1e-4;//H/(m_diameter+dist+target.m_diameter);
+
+                BoundingBox<DIM> pBox;
+		std::shared_ptr<const OctreeNode> parent=node->parent().lock();
+
+
+                const double dist_t=target.bbox(0,0).exteriorDistance(xc);
+		double smin=H/(dist_t+2*target.m_diameter);
+                if(!pBox.isNull())
+                    smin=std::min(smin,1/(sqrt(DIM)+2.0/pBox.min()[0]));
+                //1e-3;//H/(m_diameter+dist+target.m_diameter);
 
 		
 		box.min()(0)=smin;
@@ -441,8 +452,6 @@ public:
 
 		
 		    
-		BoundingBox<DIM> pBox;
-		std::shared_ptr<const OctreeNode> parent=node->parent().lock();
 		//now also add all the parents targets	       
 		if(parent && parentHasFarTargets(node))
 		{	    
