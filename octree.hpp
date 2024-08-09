@@ -432,6 +432,7 @@ public:
 		double smin=H/(dist_t+2*target.m_diameter);
                 if(!pBox.isNull())
                     smin=std::min(smin,1/(sqrt(DIM)+2.0/pBox.min()[0]));
+		//smin=1e-3;
                 //1e-3;//H/(m_diameter+dist+target.m_diameter);
 
 		

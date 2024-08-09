@@ -45,7 +45,7 @@ public:
     inline T  kernelFunction(const Eigen::Ref< const Point >&  x,const Eigen::Ref< const Point >&  n) const
     {
 	const double d2 = x.squaredNorm();
-        const double invd = 1.0/sqrt(d2);
+        const double invd = d2<1e-14 ?  0.0 : (1.0/sqrt(d2));
         const double d=d2*invd;
         
 
@@ -62,7 +62,7 @@ public:
         double real=f*((c)*nxy + (s)*kappa*(d*nxy+d2));
         double imag=f*(-(c)*kappa*(d*nxy+d2) + (s)*nxy);
 
-        return d<1e-14 ?  0.0 : T(real,imag);
+        return T(real,imag);
 
 	/*double nxy = -n.dot(x);
 	auto kern = exp(T(0,kappa)*d) / (4 * M_PI * d2*d)
@@ -153,20 +153,23 @@ public:
                 const Point& z=y.matrix().col(j)-x.matrix().col(i);
 
                 const double d2 = z.squaredNorm();
-                const double nxy=z.dot(m_normals.col(srcIds.first+i).matrix());
+		if(d2>1e-14 ){
+
+		    const double nxy=z.dot(m_normals.col(srcIds.first+i).matrix());
                 
-                const double id= 1.0/sqrt(d2);
-                const double d=d2*id;
+		    const double id= 1.0/sqrt(d2);
+		    const double d=d2*id;
                 
-                const double s=sin(kappa*(d-dc));
-                const double c=cos(kappa*(d-dc));
+		    const double s=sin(kappa*(d-dc));
+		    const double c=cos(kappa*(d-dc));
 
 
-                const double f=dc/(d2*d);
-                
+		    const double f=dc/(d2*d);
 
-                result.row(j).real()+=f*((w_r[i]*c-w_i[i]*s)*nxy + (w_r[i]*s+w_i[i]*c)*kappa*(d*nxy+d2));
-                result.row(j).imag()+=f*(-(w_r[i]*c-w_i[i]*s)*kappa*(d*nxy+d2) + (w_r[i]*s+w_i[i]*c)*nxy);
+
+		    result.row(j).real()+=f*((w_r[i]*c-w_i[i]*s)*nxy + (w_r[i]*s+w_i[i]*c)*kappa*(d*nxy+d2));
+		    result.row(j).imag()+=f*(-(w_r[i]*c-w_i[i]*s)*kappa*(d*nxy+d2) + (w_r[i]*s+w_i[i]*c)*nxy);
+		}
 
                 
                 
