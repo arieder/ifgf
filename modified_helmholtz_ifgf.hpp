@@ -1,21 +1,21 @@
-#ifndef __HELMHOLTZ_IFGF_HPP__
-#define __HELMHOLTZ_IFGF_HPP__
+#ifndef __MOD_HELMHOLTZ_IFGF_HPP__
+#define __MOD_HELMHOLTZ_IFGF_HPP__
 
 #include "ifgfoperator.hpp"
 
 
 template<size_t dim >
-class HelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
-                                                  1, HelmholtzIfgfOperator<dim> >
+class ModifiedHelmholtzIfgfOperator : public IfgfOperator<std::complex<double>, dim,
+                                                  1, ModifiedHelmholtzIfgfOperator<dim> >
 {
 public:
     typedef Eigen::Array<double, dim, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double,dim> Point;
-    HelmholtzIfgfOperator(double waveNumber,
+    ModifiedHelmholtzIfgfOperator(std::complex<double> waveNumber,
                           size_t leafSize,
                           size_t order,
                           size_t n_elem=1,double tol=-1):
-        IfgfOperator<std::complex<double>, dim, 1, HelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tol),
+        IfgfOperator<std::complex<double>, dim, 1, ModifiedHelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tol),
         k(waveNumber)
     {
     }
@@ -40,7 +40,7 @@ public:
     inline T kernelFunction(const Eigen::Ref< const Point >&  x) const
     {
         double d = x.norm();
-        return (d == 0) ? 0 : (1 / (4 * M_PI)) * exp(T(0,k) * d) / d;
+        return (d == 0) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
     }
 
     template<typename TX>
@@ -53,7 +53,7 @@ public:
 
 	    const auto d=d2.array()*invd.array();
 	    const double factor= (1.0/ (4.0 * M_PI));
-	    return (Eigen::cos(k*d)+T(0,1)*Eigen::cos(k*d)) * invd *factor;
+	    return Eigen::exp(-k * d) * invd *factor;
 	}else
 	{
 	    
@@ -63,7 +63,7 @@ public:
 	    const auto d=d2*id;
 
 
-	    return exp(T(0,k) * d)*id  * (1/(4.0 * M_PI));	
+	    return exp(-k * d)*id  * (1/(4.0 * M_PI));	
 	}
     }
 
@@ -88,7 +88,7 @@ public:
 	    const double d=(x.col(i).matrix()-xc).norm();
 	    const double dp=(x.col(i).matrix()-pxc).norm();
 	    
-	    result(i)*=std::exp(T(0,k)*(d-dp))*dp/d;
+	    result(i)*=std::exp(-k*(d-dp))*dp/d;
 	}
     }
 
@@ -122,7 +122,7 @@ public:
 		
                 result[j] +=
 		    (d==0) ? 0 : weights[i] * 
-		    exp(T(0,k) * (d - dc)) * (dc) / d;
+		    exp(-k * (d - dc)) * (dc) / d;
 	    }
         }
         return result;
@@ -139,19 +139,16 @@ public:
 
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
     {
-	const auto orders=orderForBox(H,baseOrder);
-	Eigen::Vector<size_t,dim> els;
-	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k*H/(orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
-	    els[i]=base[i]*((int) ceil(delta));
-	}
-
-	return els;	    
+	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
+	double delta=std::max( abs(imag(k))*H/(order*(1.0+real(k))) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
+	//double delta=std::max(abs(imag(k))*H/2,1.0);
+	base*=(int) ceil(delta);
+	return base;	    
     }
 
 
 private:
-    double k;
+    std::complex<double> k;
 
 };
 

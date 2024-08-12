@@ -16,7 +16,7 @@
 
 //#define CHECK_CONNECTIVITY
 //#define TWO_GRID_ONLY
-#define  RECURSIVE_MULT
+//#define  RECURSIVE_MULT
 
 #include <memory>
 
@@ -314,7 +314,7 @@ public:
 		const auto order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
 
 		const auto& chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
-		transformedNodes.local().resize(DIM,chebNodes.cols());;
+		transformedNodes.local().resize(DIM,chebNodes.cols());
 		
 		evaluateNearField(level,i, new_weights, result, tmp_result.local(), resultMutex,transformedNodes.local());
 #ifndef RECURSIVE_MULT
@@ -371,32 +371,36 @@ public:
             //Now transform the interpolation data to the parents	    	
             parentInterpolationData.resize(m_src_octree->numBoxes(level - 1));
 	    std::vector<tbb::queuing_mutex> interpDataMutex(m_src_octree->numBoxes(level - 1));
-            for (int pId = 0; pId < parentInterpolationData.size(); pId++) {		
-		if (!m_src_octree->hasPoints(level-1, pId)) {
-                        continue;
-		}
+            tbb::parallel_for(
+                tbb::blocked_range<size_t>(0, parentInterpolationData.size()),
+                [&](tbb::blocked_range<size_t> r) {
+                for (int pId = r.begin(); pId < r.end(); pId++) {		
+		   if (!m_src_octree->hasPoints(level-1, pId)) {
+			   continue;
+		   }
 
-                BoundingBox bbox = m_src_octree->bbox(level - 1, pId);
-		//std::cout<<"bbox="<<bbox.min().transpose()<<" "<<bbox.max().transpose()<<std::endl;
-                auto center = bbox.center();
-                double H = bbox.sideLength();
+		   BoundingBox bbox = m_src_octree->bbox(level - 1, pId);
+		   //std::cout<<"bbox="<<bbox.min().transpose()<<" "<<bbox.max().transpose()<<std::endl;
+		   auto center = bbox.center();
+		   double H = bbox.sideLength();
 
-                const auto order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
-		auto grid= m_src_octree->coneDomain(level-1,pId);		
-		parentInterpolationData[pId].grid = grid;
-		parentInterpolationData[pId].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);
-                //parentInterpolationData[pId].values.resize(ChebychevInterpolation::chebnodesNdd<double, DIM>(order).cols());
-                parentInterpolationData[pId].values.fill(0);
-                parentInterpolationData[pId].order = order;
+		   const auto order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
+		   auto grid= m_src_octree->coneDomain(level-1,pId);		
+		   parentInterpolationData[pId].grid = grid;
+		   parentInterpolationData[pId].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);
+		   //parentInterpolationData[pId].values.resize(ChebychevInterpolation::chebnodesNdd<double, DIM>(order).cols());
+		   parentInterpolationData[pId].values.fill(0);
+		   parentInterpolationData[pId].order = order;
 
-		//std::cout<<"Interpolation"<<order<<std::endl;
+		   //std::cout<<"Interpolation"<<order<<std::endl;
 
-            }
+	       }
+	    });
 	    
 
             std::cout << "step 3" << std::endl;
 	    
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numBoxes(level),32),
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numBoxes(level)),
             [&](tbb::blocked_range<size_t> r) {
                 PointArray chebNodes;// = ChebychevInterpolation::chebnodesNdd<double, DIM>(m_baseOrder);
                 Eigen::Matrix<T, Eigen::Dynamic,DIMOUT> tmpInterpolationData;

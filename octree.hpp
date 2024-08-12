@@ -474,11 +474,7 @@ public:
 		//now we need to do the whole thing again to figure out which cones are active...
 		std::vector<bool> is_cone_active(domain.n_elements());
 		std::fill(is_cone_active.begin(),is_cone_active.end(),false);
-		/*for (int i=0;i<domain.n_elements();i++) {
-		    assert(is_cone_active[i]==0);
-		    }*/
-		
-
+	
 		for(const IndexRange& iR : farTargets)
 		{				    
 		    for(int i=iR.first;i<iR.second;i++)
