@@ -64,6 +64,11 @@ public:
 
         return T(real,imag);
 
+	/*double nxy = -n.dot(x);
+	auto kern = exp(T(0,kappa)*d) / (4 * M_PI * d2*d)
+	    * ( nxy * (std::complex<double>(1.,0)*T(1.) - std::complex<double>(0,kappa)*d)  - T(0,kappa)*d2);
+	
+            return d<1e-14 ? 0.0 : kern;*/
 	    
     }
 
@@ -121,6 +126,7 @@ public:
                 result[j] += w[i] * kernelFunction(x.col(i) - y.col(j),m_normals.col(srcIds.first+i));
             }
         }
+            
 		
     }
 

@@ -18,6 +18,15 @@ public:
         Eigen::AlignedBox<double, DIM>(min, max)
     {
 
+	m_center=(this->max() + this->min())/2.0;
+
+	auto diag = this->diagonal();
+        double m = 0;
+        for (unsigned int i = 0; i < DIM; i++) {
+            m = std::max(m, diag[i]);
+        }
+        m_sideLength=m;
+	
     }
 
     ~BoundingBox()
@@ -25,19 +34,14 @@ public:
 
     }
 
-    inline Eigen::Vector<double, DIM> center() const
+    inline const Eigen::Vector<double, DIM>& center() const
     {
-        return  (this->max() + this->min())/2.0;
+        return  m_center;
     }
 
     inline double sideLength() const
     {
-        auto diag = this->diagonal();
-        double m = 0;
-        for (unsigned int i = 0; i < DIM; i++) {
-            m = std::max(m, diag[i]);
-        }
-        return m;
+	return m_sideLength;
     }
 
     inline double distanceToBoundary( Eigen::Vector<double,DIM> p) const
@@ -56,6 +60,10 @@ public:
 	return mD;
     }
 
+
+private:
+    Eigen::Vector<double,DIM> m_center;
+    double m_sideLength;
     
     /*
 

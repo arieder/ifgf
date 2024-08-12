@@ -14,6 +14,7 @@
 #include "chebinterp.hpp"
 #include "cone_domain.hpp"
 
+#include <tbb/queuing_mutex.h>
 #include <tbb/spin_mutex.h>
 typedef std::pair<size_t, size_t> IndexRange;
 
@@ -341,11 +342,16 @@ public:
 	//global_box.max().fill(0);
 
 	const auto & target_points=target.points();
-	
+	tbb::queuing_mutex activeConeMutex;
+
+	std::vector<tbb::spin_mutex> target_mutexes(target.numPoints());
 	Eigen::Vector<size_t,DIM> oldN;
 	//No interpolation at the two highest levels 
 	for (size_t level=0;level<levels();level++) {
 	    //update all nodes in this level
+
+	    std::vector<ConeRef> activeCones;
+	    std::vector<ConeRef> leafCones;
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
             for(size_t n=r.begin();n<r.end();++n) {
 		std::shared_ptr<OctreeNode> node=m_nodes[level][n];
@@ -431,7 +437,7 @@ public:
                 const double dist_t=target.bbox(0,0).exteriorDistance(xc);
 		double smin=H/(dist_t+2*target.m_diameter);
                 if(!pBox.isNull())
-                    smin=std::min(smin,1/(sqrt(DIM)+2.0/pBox.min()[0]));
+                    smin=std::min(smin,0.5/(sqrt(DIM)+2.0/pBox.min()[0]));
 		//smin=1e-3;
                 //1e-3;//H/(m_diameter+dist+target.m_diameter);
 
@@ -494,7 +500,7 @@ public:
 		    const ConeDomain<DIM>& p_grid=parent->coneDomain();		    
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH));
 
-		    for(size_t el : p_grid.activeCones() ) {			
+		    for(size_t el : p_grid.activeCones() ) {
 		    	for (size_t i=0;i<chebNodes.cols();i++) {
 			    auto cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
 			    auto interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
@@ -505,28 +511,61 @@ public:
 		}
 
 
-		std::vector<size_t> active_cones;
+		std::vector<size_t> local_active_cones;
 		std::vector<size_t> cone_map(domain.n_elements());
 		for(size_t i=0;i<domain.n_elements();i++)
 		{
 		    if(is_cone_active[i]) {
-			active_cones.push_back(i);
-			cone_map[i]=active_cones.size()-1;
+			ConeRef cone(level, i, local_active_cones.size(), n);
+			tbb::queuing_mutex::scoped_lock lock(activeConeMutex);
+			activeCones.push_back(cone);
+			if(node->isLeaf()) {
+			    leafCones.push_back(cone);
+			}
+			local_active_cones.push_back(i);
+			cone_map[i]=local_active_cones.size()-1;
 		    }
 		    
 		}
 
 		//std::cout<<"active="<<(100*active_cones.size())/domain.n_elements()<<std::endl;
-		domain.setActiveCones(active_cones);
+		domain.setActiveCones(local_active_cones);
 		domain.setConeMap(cone_map);
 
 		//std::cout<<"level"<<node->level()<<"range:"<<box.min().transpose()<<" "<<box.max().transpose()<<std::endl;
 		node->setConeDomain(domain);
 		//node->setInterpolationRange(box);
 	    }});
+	    std::cout<<level<<"active cones"<<activeCones.size()<<" leafCones "<<leafCones.size()<<std::endl;
+	    m_activeCones.push_back(activeCones);
+	    m_leafCones.push_back(leafCones);
+
+
+
+	    //compute the farFieldBoxes
+	    std::vector<std::vector<size_t> > ffB(target.points().size());
+	    for(size_t l=0;l<target.points().size();l++){		
+		ffB.push_back(std::vector<size_t>());
+	    }
+
+	    tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
+		for(size_t n=r.begin();n<r.end();++n) {
+		    std::shared_ptr<OctreeNode> node=m_nodes[level][n];
+		    const std::vector<IndexRange> farTargets=node->farTargets();
+		    for( const auto tRange : farTargets) {
+			for(size_t trg=tRange.first;trg<tRange.second;++trg) {
+			    tbb::spin_mutex::scoped_lock lock(target_mutexes[trg]);
+			    ffB[trg].push_back(n);
+			}
+		    }
+		}
+	    });
+	    m_farFieldBoxes.push_back(ffB);
+
 	}
 
 	std::cout<<"interp_domain:" <<global_box<<std::endl;
+
     }
 
 
@@ -576,10 +615,18 @@ public:
         return m_pnts.middleCols(index.first, index.second - index.first);
     }
 
+    const auto point(size_t id) const
+    {
+        return m_pnts.col(id);
+    }
+
+
     const std::vector<size_t> permutation() const
     {
         return m_permutation;
     }
+
+
 
 
     const IndexRange points(unsigned int level, size_t i) const
@@ -639,6 +686,18 @@ public:
     }
 
 
+    const std::vector<size_t> childBoxes(unsigned int level, size_t i) const
+    {
+	auto parent=m_nodes[level][i];
+	std::vector<size_t> children;
+	for(int i=0;i<N_Children;i++) {
+	    const auto child=parent->child(i);
+	    if(child) {
+		children.push_back(child->id());
+	    }	    
+	}
+	return children;
+    }
     
     const size_t parentId(unsigned int level, size_t i) const
     {
@@ -659,6 +718,34 @@ public:
 	return m_nodes[level][i]->isLeaf();        
     }
 
+    size_t numActiveCones(size_t level) const {
+	return m_activeCones[level].size();
+    }
+
+    ConeRef activeCone(size_t level,size_t id) const
+    {
+	return m_activeCones[level][id];
+    }
+
+
+    size_t numLeafCones(size_t level) const
+    {
+	return m_leafCones[level].size();
+    }
+
+    ConeRef leafCone(size_t level, size_t num) const
+    {
+	return m_leafCones[level][num];
+    }
+
+
+    const std::vector<size_t>& farfieldBoxes(size_t level, size_t targetPoint) const {
+	return  m_farFieldBoxes[level][targetPoint];
+    }
+
+    size_t numPoints() const {
+	return m_pnts.size();
+    }
 
     void sanitize()
     {
@@ -717,7 +804,6 @@ private:
 	
 	m_nodes[level].push_back(node);
 	
-
 
 	//check how big we are. If the number of points
 	//is small enough we create a new leaf.
@@ -789,9 +875,13 @@ private:
 	return m_pnts;
     }
 
+
 private:
     std::shared_ptr<OctreeNode > m_root;
     std::vector<std::vector<std::shared_ptr<OctreeNode> > > m_nodes;
+    std::vector<std::vector<ConeRef> > m_activeCones;
+    std::vector<std::vector<ConeRef> > m_leafCones;
+    std::vector<std::vector<std::vector<size_t> > > m_farFieldBoxes;  // on each level: for each target point y store the source boxes such that y is in the farfield 
     std::vector<unsigned int> m_numBoxes;
     unsigned int m_levels;
 

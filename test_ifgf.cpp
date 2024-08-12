@@ -38,14 +38,14 @@ int main()
     
     typedef Eigen::Matrix<double, dim, Eigen::Dynamic> PointArray ;
 
-    const int N = 100000;
+    const int N = 1000;
 
 
     //Eigen::initParallel();
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,250,10,2,-1e-8);
+    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,-1e-8);
 
     PointArray srcs = (PointArray::Random(dim,N).array());
     PointArray normals = (PointArray::Random(dim,N).array());

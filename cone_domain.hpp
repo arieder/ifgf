@@ -8,6 +8,55 @@
 
 #include "boundingbox.hpp"
 
+
+class ConeRef
+{
+public:
+    ConeRef(size_t level, size_t id,size_t memId, size_t boxId):
+	m_level(level),
+	m_id(id),
+	m_memId(memId),
+	m_boxId(boxId)
+    {
+
+    }
+
+    size_t level() const {
+	return m_level;
+    }
+
+
+    //index in the full NxNxN grid
+    size_t id() const
+    {
+	return m_id;
+    }
+
+
+    //index in memory (i.e. when skipping al non-active cones
+    size_t memId() const
+    {
+	return m_memId;
+    }
+
+    
+
+
+    size_t boxId() const
+    {
+	return m_boxId;
+    }
+
+private:
+    size_t m_level;
+    size_t m_id;
+    size_t m_boxId;
+    size_t m_memId;
+
+};
+    
+
+
 template<size_t DIM>
 class ConeDomain
 {
@@ -171,7 +220,7 @@ private:
     std::vector<size_t> m_coneMap;
 };
 
-    
+
 
 
 #endif
