@@ -10,7 +10,9 @@
 #include <Eigen/Dense>
 #include <tbb/parallel_for.h>
 #include <exception>
-#include<iostream>
+#include <iostream>
+
+#include <tbb/spin_mutex.h>
 
 #include "cone_domain.hpp"
 
@@ -109,17 +111,38 @@ namespace ChebychevInterpolation
         return nodesNd;
     }
 
-    bool iszero(double z) { return z == 0; }
+    template <typename T>
+    inline const Eigen::Array<T,Eigen::Dynamic,Eigen::Dynamic> &chebvals( size_t n)
+    {
+	static tbb::spin_mutex mutex;
+	
+        static std::unordered_map<size_t, Eigen::Array<T, Eigen::Dynamic,Eigen::Dynamic> >
+            cache;
 
-    bool isfinite(double z) { return std::isfinite(z); }
+	const size_t key=n;
+	if (cache.count(key) > 0) {
+	    return cache[key];
+	} else {
+	    tbb::spin_mutex::scoped_lock lock(mutex);
+	    if (cache.count(key) > 0) {
+		return cache[key];
+	    }
 
-    bool iszero(std::complex<double> z) {
-        return z.real() == 0 && z.imag() == 0;
+
+	    Eigen::Array<T, Eigen::Dynamic,Eigen::Dynamic> arr(n,n);
+	    for(size_t idx=0;idx<n;idx++) {
+		for(size_t sigma=0;sigma<n;sigma++) {
+		    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*n));
+		    arr(sigma,idx)=Td;
+		}
+	    }
+		
+	    cache[key] =  arr;
+	    
+	    return cache[key];
+	}        
     }
 
-    bool isfinite(std::complex<double> z) {
-        return std::isfinite(z.real()) && std::isfinite(z.imag());
-    }
 
 
     template<typename TV,typename TV2>
@@ -150,7 +173,7 @@ namespace ChebychevInterpolation
     
     
     template <typename T,int DIM>
-    inline void chebtransform(const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> >& src,
+    void chebtransform(const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, 1> >& src,
 			      Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, 1> > dest,
 			      const Eigen::Ref<const Eigen::Vector<int,DIM> >& ns
 			      )
@@ -163,13 +186,16 @@ namespace ChebychevInterpolation
 	const int stride=nsigma;
 	dest.fill(0);
 
+	const auto& cv=chebvals<double>( ns[DIM-1]);
+
 	//std::cout<<"ns="<<ns<<std::endl;
 	//std::cout<<"nsigma="<<nsigma<<std::endl;
-	if constexpr(DIM==1) {	   
+	if constexpr(DIM==1) {
 	    //do a straight forwad summation of the innermost dimension
+	    
 	    for(size_t idx=0;idx<ns[0];idx++) {
 		for(size_t sigma=0;sigma<ns[0];sigma++)  {
-		    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[0]));
+		    const double Td=cv(sigma,idx);//cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[0]));
 		    dest.segment(idx*stride,nsigma)+=src.segment(sigma*stride,nsigma)*Td;
 		}
 		dest.segment(idx*stride,nsigma)*=(idx ==0 ? 1.:2. )*1./ns[0];
@@ -201,7 +227,8 @@ namespace ChebychevInterpolation
 
 	    for(size_t idx=0;idx<ns[DIM-1];idx++) {
 		for(size_t sigma=0;sigma<ns[DIM-1];sigma++)  {
-		    const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[DIM-1]));
+		    const double Td=cv(sigma,idx);//cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[0]));
+		    //const double Td=cos(idx*M_PI*(2.*sigma+1.)/(2.*ns[DIM-1]));
 		    dest.segment(idx*stride,nsigma)+=M.segment(sigma*stride,nsigma)*Td;
 		}	    
 		dest.segment(idx*stride,nsigma)*=(idx ==0 ? 1:2 )*1./ns[DIM-1];
@@ -210,8 +237,6 @@ namespace ChebychevInterpolation
 	    //std::cout<<"err sum_factor="<<(D-dest).matrix().norm()<<std::endl;
 	}
     }
-
-
 
     
     template <typename T, int POINTS_AT_COMPILE_TIME, int DIM, unsigned int DIMOUT,  typename Derived1, typename Derived2>
@@ -452,83 +477,46 @@ namespace ChebychevInterpolation
 	return i;
 
     }
+
+    template <typename T, unsigned int DIM, unsigned int DIMOUT>
+    void fast_evaluate_tp(
+				 const Eigen::Ref<const Eigen::Array<double, DIM-1, Eigen::Dynamic> >
+				  &points,
+                                  const Eigen::Ref<const Eigen::Array<double, 1, Eigen::Dynamic> >
+				  &points2,
+                                  int axis,
+				  const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> >
+				  &interp_values,
+				  Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > dest,
+				  const Eigen::Vector<int, DIM>& ns,
+				 BoundingBox<DIM> box = BoundingBox<DIM>());
+            
+
+    template <typename T, unsigned int DIM, unsigned int DIMOUT>
+    void tp_evaluate(
+		     const std::array< Eigen::Array<double, Eigen::Dynamic,1> , DIM >
+		     &points,					 
+		     const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> >
+		     &interp_values,
+		     Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > dest,
+		     const Eigen::Vector<int, DIM>& ns );
+
+    
     
 
     template <typename T, unsigned int DIM, unsigned int DIMOUT>
-    inline void parallel_evaluate(
+    void parallel_evaluate(
 				  const Eigen::Ref<const Eigen::Array<double, DIM, Eigen::Dynamic> >
 				  &points,
 				  const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> >
 				  &interp_values,
 				  Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > dest,
 				  const Eigen::Vector<int, DIM>& ns,
-				  BoundingBox<DIM> box = BoundingBox<DIM>())
-    {
-	
-	Eigen::Array<double,DIM,Eigen::Dynamic> points0(DIM,points.cols());
-
-	const auto a=0.5*(box.max()-box.min()).array();
-	const auto b=0.5*(box.max()+box.min()).array();
-
-	if(!box.isNull()) {
-	    points0.array()=(points.array().colwise()-b).colwise()/a;
-	}else {
-	    points0=points;
-	}
-
-	//std::cout<<"ev"<<nodes[DIM-1]<<std::endl;
-
-	//dest.resize(DIMOUT,points.cols());
-        
-	//template <typename T, int N_POINTS_AT_COMPILE_TIME, unsigned int DIM, unsigned int DIMOUT, typename Derived1, typename Derived2, int N_AT_COMPILE_TIME, int... OTHER_NS>
-
-#ifdef USE_NGSOLVE
-	static ngcore::Timer t("ngbem ifgf cheb::eval");
-
-	ngcore::RegionTimer reg(t);
-	t.AddFlops (ns[0]*ns[1]*ns[2]*points.cols()*DIMOUT);
-#endif
-
-
-	//for(int i=0;i<points.cols();)
-	//{
-	size_t n_points = points.cols();
-	//We do packages of size 4, 2, 1
-	__eval<T, DIM, 5>(points0, interp_values, ns, dest, 0, n_points);
-	    //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
-	    //assert(i == r.end());
-	 //}
-	    
-	//tbb::parallel_for(tbb::blocked_range<size_t>(0, points.cols(), 64),
-	//                 partial_loop);
-	//partial_loop(tbb::blocked_range<size_t>(0,points.cols()));
-
-        /*Eigen::Array<double, -1, DIMOUT> v_r=interp_values.real();
-        Eigen::Array<double, -1, DIMOUT> v_i=interp_values.imag();
-        auto dest1 =
-ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_r,ns);
-        auto dest2 =
-ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_i,ns);
-
-
-        dest=dest1+T(0,1)*dest2;
-	*/
-	//dest= ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points0,interp_values,ns);
-	
-	
-	/*for (int j = 0; j < points0.cols(); j++) {
-	    //dest = ChebychevInterpolation::evaluate_clenshaw<T,-1,DIM,DIMOUT>(points,interp_values,ns);
-	    dest(j) = ChebychevInterpolation::evaluate_clenshaw<T,1,DIM,DIMOUT>(points0.col(j),interp_values,ns)[0];
-	    //ChebychevInterpolation::evaluate_slow<T, 1,  DIM,1>(points.col(j), interp_values,nodes,ns)[0];	    
-	    }*/
-
-	//std::cout<<"done ev"<<std::endl;
-
-    }
+				  BoundingBox<DIM> box = BoundingBox<DIM>());
 
     
     template<int DIM>
-    inline size_t cache_key(const Eigen::Vector<int, DIM>& ns)
+    inline size_t cache_key(const Eigen::Ref< const Eigen::Vector<int, DIM> >& ns)
     {
 	size_t val=0;
 	for(int i=0;i<DIM;i++){
@@ -538,16 +526,27 @@ ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_i,ns);
 	return val;
     }
 
+
+
+    
+
     template <typename T, int DIM>
-    inline const Eigen::Array<T, DIM, Eigen::Dynamic> &chebnodesNdd( const Eigen::Vector<int, DIM>& ns)
+    const Eigen::Array<T, DIM, Eigen::Dynamic> &chebnodesNdd( const Eigen::Ref< const Eigen::Vector<int, DIM> >& ns)
     {
         static std::unordered_map<size_t, Eigen::Array<T, DIM, Eigen::Dynamic> >
             cache;
+
+	static tbb::spin_mutex mutex;
 
 	const size_t key=cache_key(ns);
 	if (cache.count(key) > 0) {
 	    return cache[key];
 	} else {
+	    tbb::spin_mutex::scoped_lock lock(mutex);
+	    if (cache.count(key) > 0) {
+		return cache[key];
+	    }
+
 	    if constexpr(DIM==3) {
 		cache[key] = chebnodesNd<T, -1, -1, -1>(ns);
 	    }else if constexpr(DIM==2){
@@ -576,4 +575,5 @@ ChebychevInterpolation::evaluate_clenshaw<double,-1,DIM,DIMOUT>(points0,v_i,ns);
 
 };
 
+#include "chebinterp.cpp"
 #endif

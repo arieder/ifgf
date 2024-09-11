@@ -183,22 +183,43 @@ public:
         return result;        
     }
  
-    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder) const
+
+    
+    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
     {
 	
 	Eigen::Vector<int,dim> order;
 	order.fill(baseOrder);
-	order[0]=std::max((int)  baseOrder-2,1);
+	order[0]=std::max((int) baseOrder-2,1);
+
+
+	if(step==1) {
+	    for(int i=0;i<dim;i++){
+		order[i]=(int) 2*order[i];
+	    }
+	}
+	
         return order;
     }
 
-    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
+    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
-	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
-	double delta=std::max( kappa*H/(order) , 1.0); //make sure that k H/p is bounded. this guarantees spectral convergence w.r.t. p.
-	base*=(int) ceil(delta);
-	return base;	    
+	const auto orders=orderForBox(H,baseOrder,0);
+	Eigen::Vector<size_t,dim> els;
+	if(step==1) {
+	    base[0]=1;
+	    base[1]=2;
+	    base[2]=4;	    
+	}
+	
+	for(int i=0;i<dim;i++) {
+	    double delta=std::max( kappa*H/(orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.	   
+	    els[i]=base[i]*((int) ceil(delta));	    
+	}
+
+	return els;	    
     }
+
 
 
 private:

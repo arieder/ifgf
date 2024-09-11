@@ -7,7 +7,7 @@
 #include <iostream>
 
 #include "boundingbox.hpp"
-
+#include "util.hpp"
 
 class ConeRef
 {
@@ -85,6 +85,10 @@ public:
 	    n*=m_numEls[i];
 	return n;
     }
+
+    inline constexpr size_t n_elements(size_t d) const {
+	return m_numEls[d];
+    }
     
 
     inline const std::vector<size_t>& activeCones() const
@@ -98,18 +102,23 @@ public:
     }
 
 
-    inline void setConeMap( std::vector<size_t>& cone_map)
+    inline void setConeMap( std::unordered_map<size_t,size_t>& cone_map)
     {
 	m_coneMap=cone_map;
     }
 
 
     inline size_t memId(size_t el) const
-    {	
-	return m_coneMap[el];
+    {
+	assert(isActive(el));
+	return m_coneMap.at(el);
     }
 
-    
+
+    inline bool isActive(size_t el) const
+    {
+	return m_coneMap.count(el)>0;
+    }
     
     inline BoundingBox<DIM> domain() const {
 	return m_domain;
@@ -123,16 +132,18 @@ public:
 	const auto a=0.5*(bbox.max()-bbox.min()).array();
 	const auto b=0.5*(bbox.max()+bbox.min()).array();
 
-	tmp.array()=(pnts.array().colwise()*a).colwise()+b;
+	for(int i=0;i<pnts.cols();i++) {
+	    tmp.col(i)=(pnts.array().col(i)*a)+b;
+	}
 
-	/*for(size_t j=0;j<pnts.cols();j++)
+	/*	for(size_t j=0;j<pnts.cols();j++)
 	  {
 
 	    tmp.col(j)=pnts.col(j).array()*a+b;
 
 	    assert(bbox.exteriorDistance(tmp.col(j))<1e-14);
-	  }
-	*/
+	    }*/
+	
 	
 	return tmp;
 	    
@@ -165,10 +176,24 @@ public:
 	return tmp;	    
     }
 
+    inline Eigen::Vector<size_t,DIM> indicesFromId(size_t j) const {
+	Eigen::Vector<size_t,DIM> indices;	
+	for(int i=0;i<DIM;i++) {
+	    const size_t idx=j % m_numEls[i];
+	    j=j / m_numEls[i];
+
+	    
+	    indices[i]=idx;
+	}
+
+	return indices;
+    }
+
 
     inline BoundingBox<DIM> region(size_t j) const
     {
 	auto j0=j;
+
 	assert(j<n_elements());
 	Eigen::Vector<double, DIM> min,max;
         Eigen::Vector<double, DIM> h=m_domain.diagonal();
@@ -204,6 +229,7 @@ public:
 	    idx+=ij*stride;
 	    stride*=m_numEls[j];
 	}
+
 	assert(idx<n_elements());
 	return idx;
 
@@ -213,11 +239,50 @@ public:
     {
 	return m_domain.isEmpty();
     }
+
+
+    inline Eigen::Matrix<double,DIM,Eigen::Dynamic> rotated_points(size_t el,const Eigen::Ref<const  PointArray >& pnts, Eigen::Vector3d direction,bool backward) const
+    {
+	Eigen::Vector3d xc=Eigen::Vector3d::Zero();
+	const double H=1;
+       
+	auto targets=Util::interpToCart<DIM>(transform(el,pnts).array(), xc, H);
+
+	auto rotation=Eigen::Quaternion<double>::FromTwoVectors(direction,Eigen::Vector3d({0,0,1}));
+	Eigen::Array<double, DIM,1> pnt;
+	if(backward) {
+	    rotation=rotation.inverse();
+	}
+	
+	for(int j=0;j<targets.cols();j++) {
+	    pnt=rotation*(targets.col(j));
+	    targets.col(j)=pnt;
+	}	       
+
+	//transform to the un-rotated interpolation domain
+	PointArray transformed(3,targets.cols());
+	Util::cartToInterp2<DIM>(targets.array(),  xc, H,transformed);
+
+	return transformed;
+    }
+
+
+    inline Eigen::Matrix<double,DIM,Eigen::Dynamic> translated_points(size_t el,const Eigen::Ref<const  PointArray >& pnts, Eigen::Vector3d xc, double H, Eigen::Vector3d pxc, double pH) const
+    {	
+	auto targets=Util::interpToCart<DIM>(transform(el,pnts).array(), xc-Eigen::Vector3d(0,0,(pxc-xc).norm()), pH);
+	    
+	//transform to the child interpolation domain
+	PointArray transformed(3,targets.cols());
+	Util::cartToInterp2<DIM>(targets.array(), xc, H,transformed);
+	return transformed;
+
+    }
+
 private:
     BoundingBox<DIM> m_domain;
     Eigen::Vector<size_t, DIM> m_numEls;
     std::vector<size_t> m_activeCones;
-    std::vector<size_t> m_coneMap;
+    std::unordered_map<size_t,size_t> m_coneMap;
 };
 
 

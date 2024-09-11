@@ -1,5 +1,6 @@
-#include <iostream>
 #include <Eigen/Dense>
+#include <iostream>
+
 #include <cmath>
 
 #include "helmholtz_ifgf.hpp"
@@ -17,21 +18,50 @@ std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
 {    
     double norm = (x-y).norm();
     double nxy = -normal.dot(x-y);
-    auto kern = exp(Complex(0,kappa)*norm) / (4 * M_PI * norm*norm*norm)
+    if(norm < 1e-14) return 0;
+    /*auto kern = exp(Complex(0,kappa)*norm) / (4 * M_PI * norm*norm*norm)
 	* ( nxy * (Complex(1,0)*1. - Complex(0,kappa)*norm)  - Complex(0,kappa)*norm*norm);
-    // return kern;
+	// return kern;*/
 
-    if(norm >1e-12) return kern;
-    else return 0;
+    auto kern = exp(Complex(0,kappa)*norm) / (4 * M_PI * norm);
+    //x	* ( nxy * (Complex(1,0)*1. - Complex(0,kappa)*norm)  - Complex(0,kappa)*norm*norm);
+	// return kern;*/
+    
+
+    return kern;
 }
 
-
+#include <random>
 #include <cstdlib>
 #include <tbb/task_arena.h>
 #include <tbb/global_control.h>
 #include <fenv.h>
 
 
+Eigen::Vector3d randomPointOnSphere() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+    
+    double theta = dis(gen) * 2.0 * M_PI; // Random angle theta
+    double phi = acos(2.0 * dis(gen) - 1.0); // Random angle phi
+
+    double x = sin(phi) * cos(theta);
+    double y = sin(phi) * sin(theta);
+    double z = cos(phi);
+
+    return Eigen::Vector3d(x, y, z);
+}
+
+
+#include <armadillo>
+
+template <typename M>
+M load_csv_arma (const std::string & path) {
+    arma::mat X;
+    X.load(path, arma::csv_ascii);
+    return Eigen::Map<const M>(X.memptr(), X.n_rows, X.n_cols);
+}
 
 int main()
 {
@@ -45,19 +75,33 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    CombinedFieldHelmholtzIfgfOperator<dim> op(kappa,10,10,2,-1e-8);
+    HelmholtzIfgfOperator<dim> op(kappa,10,8,3,-1e-8);
 
-    PointArray srcs = (PointArray::Random(dim,N).array());
-    PointArray normals = (PointArray::Random(dim,N).array());
-    PointArray targets = (PointArray::Random(dim, N).array());
+    PointArray srcs(3,N);
+    //PointArray srcs=load_csv_arma<PointArray>("srcs.csv");
+
+    //std::cout<<"s"<<srcs<<std::endl;
+    //size_t  N=srcs.cols();
+    //(dim,N);
+    //srcs <<(PointArray::Random(dim,N).array());//,0.5+0.1*(PointArray::Random(dim,N).array()) ;
+    for(int i=0;i<srcs.cols();i++){
+	srcs.col(i)=randomPointOnSphere();
+    }
+    PointArray normals = srcs;//(PointArray::Random(dim,srcs.cols()).array());
+    PointArray targets = srcs;//(PointArray::Random(dim, N).array());
+    /*for(int i=0;i<targets.cols();i++){
+	targets.col(i)=randomPointOnSphere();
+	}*/
 
 
+    normals.colwise().normalize();
 
-    //feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
-    op.init(srcs, targets,normals);
 
-    Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(N);
-    weights = Eigen::VectorXd::Random(N);
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INVALID);
+    op.init(srcs, targets);//,normals);
+
+    Eigen::Vector<std::complex<double>, Eigen::Dynamic> weights(srcs.cols());
+    weights = Eigen::VectorXd::Random(srcs.cols());
 
     Eigen::Vector<std::complex<double>, Eigen::Dynamic> result;
     for(int i=0;i<10;i++) {

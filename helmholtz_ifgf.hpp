@@ -18,6 +18,9 @@ public:
         IfgfOperator<std::complex<double>, dim, 1, HelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tol),
         k(waveNumber)
     {
+
+	m_order_inc=(log(2*n_elem)/log(2));
+	std::cout<<"ho="<<m_order_inc<<std::endl;
     }
 
     typedef std::complex<double > T ;
@@ -121,29 +124,43 @@ public:
                 double d = (x.col(i) - y.col(j)).matrix().norm();
 		
                 result[j] +=
-		    (d==0) ? 0 : weights[i] * 
+		     weights[i] * 
 		    exp(T(0,k) * (d - dc)) * (dc) / d;
 	    }
         }
         return result;
     }
 
-    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder) const
+    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
     {
 	
 	Eigen::Vector<int,dim> order;
 	order.fill(baseOrder);
 	order[0]=std::max((int) baseOrder-2,1);
+
+
+	if(step==1) {
+	    for(int i=0;i<dim;i++){
+		order[i]=(int) order[i]+m_order_inc;
+	    }
+	}
+	
         return order;
     }
 
-    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
+    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
-	const auto orders=orderForBox(H,baseOrder);
+	const auto orders=orderForBox(H,baseOrder,0);
 	Eigen::Vector<size_t,dim> els;
+	if(step==1) {
+	    base[0]=1;
+	    base[1]=2;
+	    base[2]=4;	    
+	}
+	
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k*H/(orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.
-	    els[i]=base[i]*((int) ceil(delta));
+	    double delta=std::max( k*H/(0.75*orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.	   
+	    els[i]=base[i]*((int) ceil(delta));	    
 	}
 
 	return els;	    
@@ -152,6 +169,7 @@ public:
 
 private:
     double k;
+    int m_order_inc;
 
 };
 

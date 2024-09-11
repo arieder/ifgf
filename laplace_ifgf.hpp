@@ -124,18 +124,33 @@ public:
         return result;
     }
 
-    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder) const
+    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder, int step=0) const
     {
 	
 	Eigen::Vector<int,dim> order;
 	order.fill(baseOrder);
-	order[0]=baseOrder;
+	order[0]=std::max((int) baseOrder-2,1);
+	
+	if(step==1) {
+	    for(int i=0;i<dim;i++){
+		order[i]=(int) 2*order[i];
+	    }
+	}
+
+	
         return order;
     }
 
-    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base) const
+    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
 	const unsigned int order=orderForBox(H,baseOrder).minCoeff();
+
+	if(step==1) {
+	    base[0]=1;
+	    base[1]=2;
+	    base[2]=4;	    
+	}
+
 	return base;	    
     }
 
