@@ -255,11 +255,13 @@ namespace ChebychevInterpolation
 	    b1=2.*x.row(0)*vals(ns[0]-1)+vals(ns[0]-2);
 	    b2.fill(vals(ns[0]-1));
 
-	    for(size_t j=ns[0]-3;j>0;j--) {
-		tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
+	    if(ns[0]>3) {
+		for(size_t j=ns[0]-3;j>0;j--) {
+		    tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
 
-		b2=b1;
-		b1=tmp;
+		    b2=b1;
+		    b1=tmp;
+		}
 	    }
 	    
 	    return (b1*x.row(0).transpose()-b2)+vals(0);
@@ -268,10 +270,10 @@ namespace ChebychevInterpolation
 	{	   	    
 	    const size_t stride = ns.head(DIM-1).prod();    
 	    b2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-									  vals.segment((ns[0]-1) * stride, stride),
+									  vals.segment((ns[DIM-1]-1) * stride, stride),
 									  ns.template head<DIM-1>()).eval();
 	    auto cn2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										vals.segment((ns[0]-2) * stride, stride),
+										vals.segment((ns[DIM-1]-2) * stride, stride),
 										ns.template head<DIM-1>()).eval();
 
 
@@ -280,13 +282,15 @@ namespace ChebychevInterpolation
 	    auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
 									       vals.segment(0 * stride, stride),
 									       ns.template head<DIM-1>()).eval();
-	    for(size_t j=ns[0]-3;j>0;j--) {
-		tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										vals.segment(j * stride, stride),
-										ns.template head<DIM-1>());
-		tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
-		b2=b1;
-		b1=tmp;
+	    if(ns[DIM-1]>3) {
+		for(size_t j=ns[DIM-1]-3;j>0;j--) {
+		    tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+										    vals.segment(j * stride, stride),
+										    ns.template head<DIM-1>());
+		    tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
+		    b2=b1;
+		    b1=tmp;
+		}
 	    }
 
 	    return (b1*x.row(DIM-1).transpose()-b2) + c0;

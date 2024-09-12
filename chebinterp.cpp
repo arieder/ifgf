@@ -176,11 +176,13 @@ inline void  tp_evaluate_int(
 	    b1=2.*points[DIM-1][sigma]*M.middleRows((ns[DIM-1]-1)*Np,Np)+M.middleRows((ns[DIM-1]-2)*Np,Np);
 	    b2=(M.middleRows((ns[DIM-1]-1)*Np,Np));
 
-	    for(size_t j=ns[DIM-1]-3;j>0;j--) {
-		tmp=(2.*((b1)*points[DIM-1][sigma])-(b2))+M.middleRows(j*Np,Np);
+	    if(ns[DIM-1]>3) {
+		for(size_t j=ns[DIM-1]-3;j>0;j--) {
+		    tmp=(2.*((b1)*points[DIM-1][sigma])-(b2))+M.middleRows(j*Np,Np);
 		
-		b2=b1;
-		b1=tmp;
+		    b2=b1;
+		    b1=tmp;
+		}
 	    }
 	    
 	    dest.middleRows(sigma*Np,Np)=(b1*points[DIM-1][sigma]-b2)+M.middleRows(0,Np);
