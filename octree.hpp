@@ -510,8 +510,8 @@ public:
 		assert(H>0);
 		if(N_for_H(H,0)!=oldN) {
 		    oldN=N_for_H(H,0);
-		    std::cout<<"n="<<N_for_H(H,0).transpose()<<std::endl;
-		    std::cout<<"box="<<box<<" "<<box.isNull()<<std::endl;
+		    std::cout<<"n="<<N_for_H(H,0).transpose()<<"/"<<N_for_H(H,1).transpose()<<std::endl;
+		    std::cout<<"box="<<box<<" "<<box.isNull()<<"H="<<H<<std::endl;
 		}
 
 		if(!box.isNull())

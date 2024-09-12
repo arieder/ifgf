@@ -116,18 +116,30 @@ public:
 
         Eigen::Vector<T, Eigen::Dynamic> result(y.cols());
 
+	const int pkg_size=4;
+	Eigen::Array<T, pkg_size,1> tmp;
+	Eigen::Array<double, pkg_size,1> d;
         result.fill(0);        
 	for (int j = 0; j < y.cols(); j++) {
             const double dc = (y.matrix().col(j) - xc).norm();
 
-	    for (int i = 0; i < x.cols(); i++) {
-                double d = (x.col(i) - y.col(j)).matrix().norm();
+	    size_t i=0;
+	    for (i = 0; i < x.cols()/ pkg_size; i++) {
+		d=(x.middleCols( pkg_size*i, pkg_size).colwise()-y.col(j)).matrix().colwise().norm().array();
+		tmp.real()=(Eigen::cos(k*(d-dc))*dc/d);
+		tmp.imag()=Eigen::sin(k*(d-dc))*(dc/d);
 		
-                result[j] +=
-		     weights[i] * 
-		    exp(T(0,k) * (d - dc)) * (dc) / d;
+                //const float d = (x.col(i) - y.col(j)).matrix().norm();
+                result[j] +=  (weights.segment( pkg_size*i, pkg_size).matrix().transpose() * tmp.matrix()).value(); // *  std::complex<double>(  exp(std::complex<float>(0,(float) k) * (d - dc)) * (dc) / d);
 	    }
-        }
+
+	    for(size_t l=i* pkg_size;l<x.cols();l++)
+	    {
+		const double d = (x.col(l) - y.col(j)).matrix().norm();
+                result[j] +=  weights[l] *  exp(T(0,k)* (d - dc)) * (dc) / d;
+		
+	    }
+	}
         return result;
     }
 
@@ -135,15 +147,21 @@ public:
     {
 	
 	Eigen::Vector<int,dim> order;
-	order.fill(baseOrder);
-	order[0]=std::max((int) baseOrder-2,1);
 
-
-	if(step==1) {
-	    for(int i=0;i<dim;i++){
-		order[i]=(int) order[i]+m_order_inc;
-	    }
+	if(step==0) {
+	    order.fill(4);
+	    order[0]=3;
+	}else {
+	    order.fill(baseOrder);
+	    order[0]=std::max((int) baseOrder-2,1);
 	}
+
+
+	// if(step==1) {
+	//     for(int i=0;i<dim;i++){
+	// 	order[i]=(int) order[i]+m_order_inc;
+	//     }
+	// }
 	
         return order;
     }
