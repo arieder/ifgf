@@ -524,14 +524,18 @@ public:
 		std::array<std::unordered_set<size_t>,2> is_cone_active; 
 		
 
-
+		PointArray s(DIM,32);
 		for(const IndexRange& iR : farTargets)
-		{				    
-		    for(int i=iR.first;i<iR.second;i++)
+		{
+		    s.resize(DIM,std::max((size_t) s.cols(),iR.second-iR.first));
+		    Util::cartToInterp2<DIM>(target_points.middleCols(iR.first,iR.second-iR.first),xc,H,s.leftCols(iR.second-iR.first).array());			  
+		    for(int i=0;i<iR.second-iR.first;i++)
 		    {
-			const auto s=Util::cartToInterp<DIM>(target_points.col(i),xc,H);			  
-			auto coneId=domain.elementForPoint(s);
+			//const auto s=Util::cartToInterp<DIM>(target_points.col(i),xc,H);			  
+			auto coneId=domain.elementForPoint(s.col(i));
+			auto coneId2=coarseDomain.elementForPoint(s.col(i));
 			is_cone_active[0].insert(coneId);
+			is_cone_active[1].insert(coneId2);
 		    }
 		}
 
@@ -599,8 +603,10 @@ public:
 			    pnts=Util::interpToCart<DIM>(p_hoGrid.transform(el,HoChebNodes).array(),pxc,pH);
 			    Util::cartToInterp2<DIM>(pnts.array(),xc,H,interp_pnts.array());
 			    for (size_t i=0;i<HoChebNodes.cols();i++) {
-				auto coneId=domain.elementForPoint(interp_pnts.col(i));				
+				auto coneId=domain.elementForPoint(interp_pnts.col(i));
+				auto coneId2=coarseDomain.elementForPoint(interp_pnts.col(i));				
 				is_cone_active[0].insert(coneId);
+				is_cone_active[1].insert(coneId2);
 			    }
 			}			
 
@@ -621,7 +627,7 @@ public:
 		}
 
 
-		if(mode==TwoGrid) {
+		/*if(mode==TwoGrid) {
 		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(H,1));
 		    //reinterpolation step from HO to regular
 		    PointArray interp_pnts(DIM, chebNodes.cols());
@@ -636,7 +642,7 @@ public:
 			    
 			}
 		    }
-		}
+		    }*/
 		
 		for (int step=0;step<2;step++ ) {
 		     std::vector<size_t> local_active_cones;

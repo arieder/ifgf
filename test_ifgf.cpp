@@ -75,7 +75,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(kappa,10,8,16,-1e-8);
+    HelmholtzIfgfOperator<dim> op(kappa,10,8,3,-1e-8);
 
     PointArray srcs(3,N);
     //PointArray srcs=load_csv_arma<PointArray>("srcs.csv");

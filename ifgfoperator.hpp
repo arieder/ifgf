@@ -1533,6 +1533,7 @@ m_src_octree->numBoxes(level)),
 		    if(result.grid.isActive(fine_el)) { //if the cone is not active, discard it
 			size_t fine_memId=result.grid.memId(fine_el);
 			size_t idx_fine=(l % order[2])*order[0]*order[1]+(j % order[1])*order[0];// + (k % order[0]);
+
 			result.values.middleRows(fine_memId*fine_stride+idx_fine, order[0])=tmp_result.middleRows(idx_coarse,order[0]);
 		    }
 		    idx_coarse+=order[0];

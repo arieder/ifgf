@@ -149,7 +149,7 @@ public:
 	Eigen::Vector<int,dim> order;
 
 	if(step==0) {
-	    order.fill(4);
+	    order.fill(5);
 	    order[0]=3;
 	}else {
 	    order.fill(baseOrder);
@@ -168,19 +168,24 @@ public:
 
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
-	const auto orders=orderForBox(H,baseOrder,0);
+	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
 	if(step==1) {
-	    base[0]=1;
-	    base[1]=2;
-	    base[2]=4;	    
+	    if constexpr(dim==3){ 
+		base[0]=1;
+		base[1]=2;
+		base[2]=4;
+	    }else{
+		base[0]=1;
+		base[1]=2;
+	    }
 	}
-	
+	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k*H/(0.75*orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.	   
+	    double delta=std::max( k*H/4 , 1.0); //make sure that k H is bounded
 	    els[i]=base[i]*((int) ceil(delta));	    
 	}
-
+	    
 	return els;	    
     }
 
