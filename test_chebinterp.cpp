@@ -15,19 +15,19 @@ int main()
     typedef std::complex<double> T;
     Eigen::Array<double, dim, Eigen::Dynamic> points = Eigen::Array<double, dim, Eigen::Dynamic, Eigen::RowMajor>::Random(dim, N);
 
-    const double H = 0.1;
+    const double H = 0.01;
     const double k = 1;
     typedef Eigen::Vector<double, dim> Point;
     //const Point xc{ H / 2.0};
     auto kernel = [&](auto pnt) {
         auto d=pnt.matrix().squaredNorm();
-	return exp(d+pnt[2])/(d+1+pnt[0]+1);
+	return exp(d+pnt[2]);///(d+1+pnt[0]+1);
     };
 
-    const int p = 25;
+    const int p = 2;
     Eigen::Vector<int, dim> ns;
     ns.fill(p);
-    ns[0]-=2;
+    //ns[0]-=2;
     Eigen::Array<double, dim, Eigen::Dynamic> interp_nodes = ChebychevInterpolation::chebnodesNd<double,-1,-1,-1>(ns);
 
     Eigen::Array<T, Eigen::Dynamic, 1> interp_values(interp_nodes.cols());

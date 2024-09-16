@@ -149,7 +149,7 @@ public:
 	Eigen::Vector<int,dim> order;
 
 	if(step==0) {
-	    order.fill(5);
+	    order.fill(4);
 	    order[0]=3;
 	}else {
 	    order.fill(baseOrder);

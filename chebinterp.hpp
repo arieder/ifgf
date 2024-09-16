@@ -251,24 +251,51 @@ namespace ChebychevInterpolation
 
 
 	if constexpr (DIM==1)
-	{	    
+	{
+	    if(ns[0]<=2) {
+		if(ns[0]==1) {
+		    return vals[0]+ x.row(0).transpose().Zero();
+		}else {
+		    return x.row(0).transpose()*vals[1]+vals[0];			
+		}
+	    }
+
 	    b1=2.*x.row(0)*vals(ns[0]-1)+vals(ns[0]-2);
 	    b2.fill(vals(ns[0]-1));
 
-	    if(ns[0]>3) {
-		for(size_t j=ns[0]-3;j>0;j--) {
-		    tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
 
-		    b2=b1;
-		    b1=tmp;
-		}
+	    for(size_t j=ns[0]-3;j>0;j--) {
+		tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
+
+		b2=b1;
+		b1=tmp;
+		
 	    }
 	    
 	    return (b1*x.row(0).transpose()-b2)+vals(0);
 
 	}else //recurse down
 	{	   	    
-	    const size_t stride = ns.head(DIM-1).prod();    
+	    const size_t stride = ns.head(DIM-1).prod();
+
+	    if(ns[DIM-1]<=2) {
+		auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+										   vals.segment(0 * stride, stride),
+										   ns.template head<DIM-1>()).eval();
+
+		if(ns[DIM-1]==1) {
+		    return c0 + x.row(0).transpose().Zero();
+		}else {
+		    b1=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+										  vals.segment((1) * stride, stride),
+										  ns.template head<DIM-1>()).eval();
+
+		    return x.row(DIM-1).transpose()*b1+c0;		    
+		}
+	    }
+
+
+	    
 	    b2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
 									  vals.segment((ns[DIM-1]-1) * stride, stride),
 									  ns.template head<DIM-1>()).eval();
@@ -282,15 +309,14 @@ namespace ChebychevInterpolation
 	    auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
 									       vals.segment(0 * stride, stride),
 									       ns.template head<DIM-1>()).eval();
-	    if(ns[DIM-1]>3) {
-		for(size_t j=ns[DIM-1]-3;j>0;j--) {
-		    tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
+	    for(size_t j=ns[DIM-1]-3;j>0;j--) {
+		tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
 										    vals.segment(j * stride, stride),
 										    ns.template head<DIM-1>());
-		    tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
-		    b2=b1;
-		    b1=tmp;
-		}
+		tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
+		b2=b1;
+		b1=tmp;
+		
 	    }
 
 	    return (b1*x.row(DIM-1).transpose()-b2) + c0;
