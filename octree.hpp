@@ -1,6 +1,8 @@
 #ifndef _OCTREE_HPP_
 #define _OCTREE_HPP_
 
+#include "config.hpp"
+
 #include <Eigen/Dense>
 #include <memory>
 #include <map>
@@ -351,7 +353,7 @@ public:
 
 #ifdef RECURSIVE_MULT
 	
-	int min_boxes=32;
+	int min_boxes=MIN_RECURSIVE_BOXES;
 	int min_recursive_level=0;
         for(;min_recursive_level<levels();min_recursive_level++) {
             if(numBoxes(min_recursive_level) > min_boxes) {
@@ -715,6 +717,7 @@ public:
 		});
 		m_farFieldBoxes.push_back(ffB);
 	    }else {
+		
 		m_farFieldBoxes.push_back(std::vector<std::vector<size_t> >());
 	    }
 

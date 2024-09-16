@@ -11,7 +11,7 @@ all: test_ifgf.o
 #chebinterp.o: chebinterp.cpp chebinterp.hpp  boundingbox.hpp
 #	g++ $(CPPFLAGS) -c chebinterp.cpp 
 
-test_ifgf.o: test_ifgf.cpp ifgfoperator.hpp cone_domain.hpp boundingbox.hpp octree.hpp helmholtz_ifgf.hpp
+test_ifgf.o: test_ifgf.cpp ifgfoperator.hpp cone_domain.hpp boundingbox.hpp octree.hpp helmholtz_ifgf.hpp config.hpp
 	g++ $(CPPFLAGS) -c test_ifgf.cpp 
 
 test_cheb: test_chebinterp.cpp chebinterp.hpp

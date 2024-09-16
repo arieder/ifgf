@@ -124,9 +124,9 @@ namespace ChebychevInterpolation
 	    return cache[key];
 	} else {
 	    tbb::spin_mutex::scoped_lock lock(mutex);
-	    if (cache.count(key) > 0) {
+	    /*	    if (cache.count(key) > 0) {
 		return cache[key];
-	    }
+		}*/
 
 
 	    Eigen::Array<T, Eigen::Dynamic,Eigen::Dynamic> arr(n,n);
