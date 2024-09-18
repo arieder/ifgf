@@ -5,3 +5,8 @@ Christoph Bauinger, Oscar P. Bruno, “Interpolated Factored Green Function” m
 see https://www.sciencedirect.com/science/article/pii/S002199912030869X for details on the method.
 
 Designed to be a plug-in replacement for the FastMultipole Method in bempp-cl
+
+
+For optimal performance this library requires the fast hasmap implementation from 
+https://github.com/martinus/unordered_dense
+
