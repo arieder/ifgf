@@ -3,7 +3,19 @@
 
 #include <Eigen/Dense>
 #include <memory>
+
+#ifdef USE_FAST_HASH
+#include <ankerl/unordered_dense.h>
+typedef ankerl::unordered_dense::map<size_t, size_t> IndexMap;
+typedef ankerl::unordered_dense::set<size_t> IndexSet;
+
+#else
 #include <map>
+typedef std::unordered_map<size_t, size_t> IndexMap;
+typedef std::unordered_set<size_t> IndexSet;
+
+
+#endif
 #include <iostream>
 
 #include "boundingbox.hpp"
@@ -102,7 +114,7 @@ public:
     }
 
 
-    inline void setConeMap( std::unordered_map<size_t,size_t>& cone_map)
+    inline void setConeMap( IndexMap& cone_map)
     {
 	m_coneMap=cone_map;
     }
@@ -112,6 +124,7 @@ public:
     {
 	assert(isActive(el));
 	return m_coneMap.at(el);
+	
     }
 
 
@@ -150,9 +163,21 @@ public:
     }
 
 
+    //transforms from K_el to (-1,1)
+    void transformBackwardsInplace(size_t el,Eigen::Ref<const  PointArray > pnts) const 
+    {
+	const BoundingBox bbox=region(el);
+	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
+
+	const auto a=0.5*(bbox.max()-bbox.min()).array();
+	const auto b=0.5*(bbox.max()+bbox.min()).array();
+
+	pnts.array()=(pnts.array().colwise()-b).colwise()/a;
+    }
+
 
     //transforms from K_el to (-1,1)
-    inline Eigen::Matrix<double,DIM,Eigen::Dynamic> transformBackwards(size_t el,const Eigen::Ref<const  PointArray >& pnts) const 
+    Eigen::Matrix<double,DIM,Eigen::Dynamic> transformBackwards(size_t el,const Eigen::Ref<const  PointArray >& pnts) const 
     {
 	const BoundingBox bbox=region(el);
 	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
@@ -190,7 +215,7 @@ public:
     }
 
 
-    inline BoundingBox<DIM> region(size_t j) const
+    BoundingBox<DIM> region(size_t j) const
     {
 	auto j0=j;
 
@@ -210,7 +235,7 @@ public:
 	return BoundingBox<DIM>(min,max);
     }
 
-    inline size_t elementForPoint(const Eigen::Ref<const Eigen::Vector<double,DIM> > & pnt) const
+    size_t elementForPoint(const Eigen::Ref<const Eigen::Vector<double,DIM> > & pnt) const
     {
 	size_t idx=0;
 	int stride=1;
@@ -219,7 +244,7 @@ public:
 	//std::cout<<m_numEls<<std::endl;
 	std::cout<<"pn"<<pnt.transpose()<<std::endl;
         }*/
-	assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
+	//assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
 	for(int j=0;j<DIM;j++) {	    
 	    const double q=(pnt[j]-m_domain.min()[j])*m_numEls[j]/m_domain.diagonal()[j];
 	    
@@ -230,7 +255,7 @@ public:
 	    stride*=m_numEls[j];
 	}
 
-	assert(idx<n_elements());
+	//assert(idx<n_elements());
 	return idx;
 
     }
@@ -282,7 +307,7 @@ private:
     BoundingBox<DIM> m_domain;
     Eigen::Vector<size_t, DIM> m_numEls;
     std::vector<size_t> m_activeCones;
-    std::unordered_map<size_t,size_t> m_coneMap;
+    IndexMap m_coneMap;
 };
 
 

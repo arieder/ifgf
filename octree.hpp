@@ -523,7 +523,7 @@ public:
 		// 0: where do i need to compute the points directly/from the children in order to be able to sample FF and first rotation
 		// 1: where do i need to compute the points using  the first rotation in order to be able to compute the translation
 		// 2: where do i need to compute the points using the translation in order to be able to compute the second rotation
-		std::array<std::unordered_set<size_t>,2> is_cone_active; 
+		std::array<IndexSet,2> is_cone_active; 
 		
 
 		PointArray s(DIM,32);
@@ -648,7 +648,7 @@ public:
 		
 		for (int step=0;step<2;step++ ) {
 		     std::vector<size_t> local_active_cones;
-		     std::unordered_map<size_t,size_t> cone_map;
+		     IndexMap cone_map;
 		     //local_active_cones.reserve(domain.n_elements());
 		     for( size_t i : is_cone_active[step])
 		     {			 

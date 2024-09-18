@@ -148,20 +148,12 @@ public:
 	
 	Eigen::Vector<int,dim> order;
 
+	order.fill(baseOrder);
+	order[0]=std::max((int) baseOrder-2,1);
+
 	if(step==0) {
-	    order.fill(4);
-	    order[0]=3;
-	}else {
-	    order.fill(baseOrder);
-	    order[0]=std::max((int) baseOrder-2,1);
+	    order.array()-=2;
 	}
-
-
-	// if(step==1) {
-	//     for(int i=0;i<dim;i++){
-	// 	order[i]=(int) order[i]+m_order_inc;
-	//     }
-	// }
 	
         return order;
     }
@@ -170,15 +162,8 @@ public:
     {
 	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
-	if(step==1) {
-	    if constexpr(dim==3){ 
-		base[0]=1;
-		base[1]=2;
-		base[2]=4;
-	    }else{
-		base[0]=1;
-		base[1]=2;
-	    }
+	if(step==0) {
+	    base*=2;
 	}
 	    
 	for(int i=0;i<dim;i++) {

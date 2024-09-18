@@ -61,7 +61,7 @@ void ChebychevInterpolation::fast_evaluate_tp(
 	//std::cout<<"building m"<<DIM<<std::endl;
 	if(axis==2) {
 	    for(size_t idx=0;idx<ns[2];idx++) {
-		__eval<T, DIM-1, 5>(points_t,interp_values.middleRows(idx*n_values,n_values),
+		__eval<T, DIM-1, 3, -1,-1,-1>(points_t,interp_values.middleRows(idx*n_values,n_values),
                                     ns.template head<DIM-1>(), M.middleRows(idx*n_points,n_points).array(), 0, n_points);
 	    }
 
@@ -90,7 +90,7 @@ void ChebychevInterpolation::fast_evaluate_tp(
 	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp(n_y,DIMOUT);
 	    for(size_t idx=0;idx<n_values;idx++) {
 		tmp.fill(0);
-		__eval<T, 1, 5>(points2_t,interp_values.middleRows(idx*ns[0],ns[0]),
+		__eval<T, 1, 3,-1,-1,-1>(points2_t,interp_values.middleRows(idx*ns[0],ns[0]),
 				ns.template head<1>(), tmp, 0, n_y);
 
 		for(size_t sigma=0;sigma<n_y;sigma++) {
@@ -105,7 +105,7 @@ void ChebychevInterpolation::fast_evaluate_tp(
 		//    (dest.data()+l, n_points, Eigen::Stride<Eigen::Dynamic,1>(n_points, 1));                   
 
 		tmp.fill(0);
-		__eval<T, DIM-1, 5>(points_t,M.segment(l*n_values,n_values),
+		__eval<T, DIM-1, 3,-1,-1,-1>(points_t,M.segment(l*n_values,n_values),
 				    ns.template tail(DIM-1), tmp, 0, n_points);
 
 		for(size_t idx=0;idx<n_points;idx++) {		   
@@ -265,8 +265,29 @@ void ChebychevInterpolation::parallel_evaluate(
 	//for(int i=0;i<points.cols();)
 	//{
 	size_t n_points = points.cols();
-	//We do packages of size 4, 2, 1
-	__eval<T, DIM, 5>(points0, interp_values, ns, dest, 0, n_points);
+	if constexpr(DIM==3) {
+
+	    if(ns[0]==2 && ns[1]==4 && ns[2]==4)  {
+		__eval<T, DIM, 5, 4, 4, 2>(points0, interp_values, ns, dest, 0, n_points);
+	    }
+	    else if(ns[0]==4 && ns[1]==6 && ns[2]==6)  {
+		__eval<T, DIM, 5, 6, 6, 4>(points0, interp_values, ns, dest, 0, n_points);
+	    }else if(ns[0]==6 && ns[1]==8 && ns[2]==8)  {
+		__eval<T, DIM, 5, 8, 8, 6>(points0, interp_values, ns, dest, 0, n_points);
+		return;
+	    }else if(ns[0]==8 && ns[1]==10 && ns[2]==10)  {
+		__eval<T, DIM, 5, 10, 10, 8>(points0, interp_values, ns, dest, 0, n_points);
+		return;
+	    }else{		
+		__eval<T, DIM, 5,-1,-1,-1>(points0, interp_values, ns, dest, 0, n_points);
+	    }
+	}else{
+	    __eval<T, DIM, 5,-1,-1,-1>(points0, interp_values, ns, dest, 0, n_points);
+	    
+	}
+
+	    
+
 	    //std::cout<<"i"<<i<<" vs "<<r.end()<<std::endl;
 	    //assert(i == r.end());
 	 //}
@@ -283,7 +304,7 @@ template
 const Eigen::Array<double, 3, Eigen::Dynamic> &ChebychevInterpolation::chebnodesNdd<double,3>( const Eigen::Ref< const Eigen::Vector<int, 3> >& ns);
 
 
-
+#if 0
 //double
 template struct ChebychevInterpolation::InterpolationData<double, 3, 1>;
 
@@ -370,3 +391,4 @@ void ChebychevInterpolation::chebtransform<std::complex<double>,3>(const Eigen::
 								   const Eigen::Ref<const Eigen::Vector<int,3> >& ns
 								   );
     
+#endif

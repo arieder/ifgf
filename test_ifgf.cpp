@@ -54,15 +54,6 @@ Eigen::Vector3d randomPointOnSphere() {
 }
 
 
-#include <armadillo>
-
-template <typename M>
-M load_csv_arma (const std::string & path) {
-    arma::mat X;
-    X.load(path, arma::csv_ascii);
-    return Eigen::Map<const M>(X.memptr(), X.n_rows, X.n_cols);
-}
-
 int main()
 {
     
@@ -75,7 +66,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(kappa,10,8,3,-1e-8); //3
+    HelmholtzIfgfOperator<dim> op(kappa,10,9,1,-1e-8); //3
 
     PointArray srcs(3,N);
     //PointArray srcs=load_csv_arma<PointArray>("srcs.csv");

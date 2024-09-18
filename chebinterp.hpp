@@ -238,57 +238,70 @@ namespace ChebychevInterpolation
 	}
     }
 
-    
-    template <typename T, int POINTS_AT_COMPILE_TIME, int DIM, unsigned int DIMOUT,  typename Derived1, typename Derived2>
-    inline Eigen::Array<T,POINTS_AT_COMPILE_TIME,DIMOUT> evaluate_clenshaw(const Eigen::ArrayBase<Derived1>  &x,
-		const Eigen::ArrayBase<Derived2> &vals,
-		const Eigen::Ref<const Eigen::Vector<int,DIM> >& ns )
+    template <typename T, int POINTS_AT_COMPILE_TIME, int DIM, int DIM_X, unsigned int DIMOUT, int ND=-1, int... Ns>    
+    class ClenshawEvaluator
     {
-	assert(DIMOUT==1); //For now only 1d output works. 
+    public:
+	inline  Eigen::Array<T,POINTS_AT_COMPILE_TIME,DIMOUT>
+	operator()(const Eigen::Ref<const Eigen::Array<double,DIM_X, POINTS_AT_COMPILE_TIME> > &x,
+		   const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> > &vals,
+		   const Eigen::Ref<const Eigen::Vector<int,DIM_X> >& ns )
+    {
+	static_assert(DIMOUT==1); //For now only 1d output works.
+	static_assert(DIM>0);
+	static_assert(DIM<=DIM_X);
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b1(x.cols(),DIMOUT);
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> b2(x.cols(),DIMOUT);
 	Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> tmp(x.cols(),DIMOUT);
 
+	const int Nd= ND >0 ? ND : ns[DIM-1];
 
-	if constexpr (DIM==1)
+	/*	std::cout<<"ND="<<ND<<" vs "<<ns<<" "<<DIM_X<<" \n";
+	(std::cout<<...<<Ns);
+	std::cout<<"\n";*/
+	    
+	    
+	//assert(ND < 0 || ND==ns[DIM-1]);
+	
+	if constexpr (DIM<=1)	    
 	{
-	    if(ns[0]<=2) {
-		if(ns[0]==1) {
+	    const int Nd= ND >0 ? ND : ns[0];
+	    if(Nd<=2) {
+		if(Nd==1) {
 		    return vals[0]+ x.row(0).transpose().Zero();
 		}else {
 		    return x.row(0).transpose()*vals[1]+vals[0];			
 		}
 	    }
+	    b1=2.*x.row(0)*vals(Nd-1)+vals(Nd-2);
+	    b2.fill(vals(Nd-1));
+	
 
-	    b1=2.*x.row(0)*vals(ns[0]-1)+vals(ns[0]-2);
-	    b2.fill(vals(ns[0]-1));
-
-
-	    for(size_t j=ns[0]-3;j>0;j--) {
+	    for(size_t j=Nd-3;j>0;j--) {
 		tmp=(2.*((b1)*x.row(0).transpose())-(b2))+vals(j);
-
+	    
 		b2=b1;
 		b1=tmp;
-		
+	    
 	    }
 	    
 	    return (b1*x.row(0).transpose()-b2)+vals(0);
-
 	}else //recurse down
 	{	   	    
-	    const size_t stride = ns.head(DIM-1).prod();
+	    const size_t stride = ns.template head<DIM-1>().prod();
 
-	    if(ns[DIM-1]<=2) {
-		auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										   vals.segment(0 * stride, stride),
-										   ns.template head<DIM-1>()).eval();
+	    ClenshawEvaluator<T, POINTS_AT_COMPILE_TIME, std::max(DIM-1,1), DIM_X,DIMOUT,Ns...> clenshaw;
+	    if(Nd<=2) {
+		const Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT>& c0=clenshaw(x,
+										   vals.middleRows(0 * stride, stride),
+										   ns).eval();
 
-		if(ns[DIM-1]==1) {
-		    return c0 + x.row(0).transpose().Zero();
+		if(Nd==1) {
+		    return c0 + x.row(DIM-1).transpose().Zero();
 		}else {
-		    b1=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										  vals.segment((1) * stride, stride),
-										  ns.template head<DIM-1>()).eval();
+		    b1=clenshaw(x,
+				vals.middleRows((1) * stride, stride),
+				ns).eval();
 
 		    return x.row(DIM-1).transpose()*b1+c0;		    
 		}
@@ -296,24 +309,24 @@ namespace ChebychevInterpolation
 
 
 	    
-	    b2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-									  vals.segment((ns[DIM-1]-1) * stride, stride),
-									  ns.template head<DIM-1>()).eval();
-	    auto cn2=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										vals.segment((ns[DIM-1]-2) * stride, stride),
-										ns.template head<DIM-1>()).eval();
+	    b2=clenshaw(x,
+			vals.middleRows((Nd-1) * stride, stride),
+			ns).eval();
+	    const Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> cn2=clenshaw(x,
+			      vals.middleRows((Nd-2) * stride, stride),
+			      ns).eval();
 
 
 	    b1=2.*b2*x.row(DIM-1).transpose()+cn2;
 
-	    auto c0=evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-									       vals.segment(0 * stride, stride),
-									       ns.template head<DIM-1>()).eval();
-	    for(size_t j=ns[DIM-1]-3;j>0;j--) {
-		tmp= evaluate_clenshaw<T, POINTS_AT_COMPILE_TIME, DIM-1,DIMOUT>(x.topRows(DIM - 1),
-										    vals.segment(j * stride, stride),
-										    ns.template head<DIM-1>());
-		tmp+=(2.*(b1*x.row(DIM-1).transpose())-b2);
+	    const Eigen::Array<T, POINTS_AT_COMPILE_TIME, DIMOUT> c0=clenshaw(x,
+			     vals.middleRows(0 * stride, stride),
+			     ns).eval();
+	    for(size_t j=Nd-3;j>0;j--) {
+		tmp= clenshaw(x,
+			      vals.middleRows(j * stride, stride),
+			      ns);
+		tmp+=(2.*(b1*x.template row(DIM-1).transpose())-b2);
 		b2=b1;
 		b1=tmp;
 		
@@ -322,8 +335,10 @@ namespace ChebychevInterpolation
 	    return (b1*x.row(DIM-1).transpose()-b2) + c0;
 
 	}
-    }	
-    
+    }
+    };
+
+
 
 
     //3d evaluation code
@@ -479,11 +494,11 @@ namespace ChebychevInterpolation
         return result;
     }
 
-    template <typename T, unsigned int DIM, char package, typename T1, typename T2, typename T3>
-    inline int __eval(const T1  &points,
-		      const T2 &interp_values,
+    template <typename T, unsigned int DIM,  char package,int... Ns>
+    inline int __eval(const Eigen::Ref<const Eigen::Array<double, DIM,Eigen::Dynamic> >  &points,
+		      const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic,1> > &interp_values,
 		      const Eigen::Vector<int,DIM>& ns,
-		      T3 &dest, size_t i, size_t n_points)
+		      Eigen::Ref<Eigen::Array<T, Eigen::Dynamic,1> > dest, size_t i, size_t n_points)
     {
 	const int DIMOUT=1;
 	const unsigned int packageSize = 1 << package;
@@ -492,15 +507,16 @@ namespace ChebychevInterpolation
 			 
 		      
 	Eigen::Array<double,DIM,packageSize> tmp;
-
+	
+	ChebychevInterpolation::ClenshawEvaluator<T, packageSize,  DIM,DIM, DIMOUT,Ns...> clenshaw;
 	for (int j = 0; j < np; j++) {
-	    tmp=points.middleCols(i, packageSize);
-	    dest.segment(i, packageSize) = ChebychevInterpolation::evaluate_clenshaw<T, packageSize,  DIM, DIMOUT>(tmp, interp_values,ns);
+	    tmp=points.middleCols(i, packageSize);	    
+	    dest.segment(i, packageSize) = clenshaw(tmp, interp_values,ns);
 	    i += packageSize;
 	}
 	if constexpr(package > 0) {
 	    if (n_points > 0) {
-		i = __eval < T,  DIM, package - 1 > (points, interp_values, ns, dest, i, n_points);
+		i = __eval < T,  DIM,  package - 1,Ns... > (points, interp_values, ns, dest, i, n_points);
 	    }
 	}
 

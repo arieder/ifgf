@@ -819,6 +819,8 @@ public:
 	}
 	
 
+#define USE_REINTERPOLATION	
+#ifdef USE_REINTERPOLATION
 	//We now reinterpolate on a finer low-order grid to get the fast point-evaluation
 	ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT> refinedData;
 	refinedData.order = order;
@@ -845,8 +847,9 @@ public:
 	    ChebychevInterpolation::chebtransform<T,DIM>(refinedData.values.middleRows(memId*stride2,stride2),tmpData,order);
 	    refinedData.values.middleRows(memId*stride2,stride2)=tmpData;
 	}
-
-
+#else
+        auto& refinedData=storage;
+#endif
         //Now that sthe Interpolation data storage has been prepared, we can use it to evaluate the field at the cousin nodes
 	evaluateFarField(level,id, weights, result, refinedData, tmp_result);
 
@@ -1220,7 +1223,12 @@ public:
     void coarseToFine(const ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& interpolationData, size_t level, const ConeRef& hoCone, 
 		      Eigen::Array<T, Eigen::Dynamic,1>& tmp_result, const Eigen::Vector<int, DIM>& order, const Eigen::Vector<int, DIM>& high_order,double H0,
 		      ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT>& result)
-    {	
+    {
+#ifdef USE_NGSOLVE
+	static ngcore::Timer t("ngbem coarse to fine");
+	ngcore::RegionTimer reg(t);
+#endif
+
 	size_t boxId=hoCone.boxId();
 	const auto& hoGrid= m_src_octree->coneDomain(level,boxId,1);
 	
@@ -1307,11 +1315,16 @@ public:
                         const Eigen::Ref<const Eigen::Vector<double, DIM> > &p_xc, double pH,
                         Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > result) const
     {
+#ifdef USE_NGSOLVE
+	static ngcore::Timer t("ngbem transfer interp");
+	ngcore::RegionTimer reg(t);
+#endif
+
         //transform to the child interpolation domain
         PointArray transformed(DIM, targets.cols());
         transformCartToInterp(targets, transformed, xc, H);
 
-	result.fill(0);
+	//result.fill(0);
 	const size_t stride=data.computeStride();
 
 	//std::cout<<"stride"<<stride<<std::endl;
@@ -1376,6 +1389,11 @@ public:
 				  const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
 				  Eigen::Ref<Eigen::Array<T, 1, DIMOUT> > result) const
     {
+#ifdef USE_NGSOLVE
+	static ngcore::Timer t("ngbem single interp");
+	ngcore::RegionTimer reg(t);
+#endif
+
 	Eigen::Array<double,DIM, 1> transformed(DIM);
 	transformCartToInterp(target, transformed, xc, H);
 	const size_t stride=data.computeStride();
@@ -1383,7 +1401,9 @@ public:
 	const size_t memId=data.grid.memId(el);
 
 	transformed=data.grid.transformBackwards(el,transformed);
-	result=ChebychevInterpolation::evaluate_clenshaw<T, 1,DIM,DIMOUT>(transformed, data.values.middleRows(memId*stride,stride),  data.order);
+	ChebychevInterpolation::ClenshawEvaluator<T,1, DIM,DIM, DIMOUT, -1,-1,-1> clenshaw;
+	result=clenshaw(transformed, data.values.middleRows(memId*stride,stride),  data.order);
+	
 	
 	const auto cf = static_cast<const Derived *>(this)->CF(target.matrix() - xc);
 	result*= cf;
@@ -1397,6 +1417,11 @@ public:
                             const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                             Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > result) const
     {
+#ifdef USE_NGSOLVE
+	static ngcore::Timer t("ngbem eval from interp");
+	ngcore::RegionTimer reg(t);
+#endif
+
 
 	//std::cout<<"efromInt"<<data.order<<std::endl;
 	//sort the points into the corresponding cones
@@ -1421,18 +1446,20 @@ public:
 
 	if(true) {
 	    size_t idx=0;
+	    size_t nextElement=data.grid.elementForPoint(transformed.col(0));
 	    while (idx<N)
 	    {
-		size_t nb=1;
-		const size_t el=data.grid.elementForPoint(transformed.col(idx));
+		size_t nb=0;
+		const size_t el=nextElement;
 		const size_t memId=data.grid.memId(el);
 
 		//transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
 		//look if any of the following points are also in this element. that way we can process them together
-		while(idx+nb<transformed.cols() && data.grid.elementForPoint(transformed.col(idx+nb))==el) {
-		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
+		while(idx+nb<transformed.cols() && nextElement==el) {
 		    nb++;
-		    }
+		    nextElement=data.grid.elementForPoint(transformed.col(idx+nb));
+		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
+		}
 		transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
 
 		
