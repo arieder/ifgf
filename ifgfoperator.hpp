@@ -1423,6 +1423,10 @@ public:
 #endif
 
 
+	if(targets.cols()==0) {
+	    return;
+	}
+	
 	//std::cout<<"efromInt"<<data.order<<std::endl;
 	//sort the points into the corresponding cones
 	const int N=targets.cols();
@@ -1455,9 +1459,13 @@ public:
 
 		//transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
 		//look if any of the following points are also in this element. that way we can process them together
-		while(idx+nb<transformed.cols() && nextElement==el) {
+		while(nextElement==el) {
 		    nb++;
-		    nextElement=data.grid.elementForPoint(transformed.col(idx+nb));
+		    if(idx+nb<transformed.cols())  {
+			nextElement=data.grid.elementForPoint(transformed.col(idx+nb));
+		    }else{
+			break;
+		    }
 		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
 		}
 		transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
