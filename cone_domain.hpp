@@ -99,6 +99,35 @@ public:
     inline void setActiveCones( std::vector<size_t>& cones)
     {
 	m_activeCones=cones;
+        precomputeRegions();
+    }
+
+    void precomputeRegions()
+    {
+        m_regions.resize(m_activeCones.size());
+        size_t idx=0;
+        for( size_t j: m_activeCones )
+        {
+            auto j0=j;
+
+            assert(j<n_elements());
+            Eigen::Vector<double, DIM> min,max;
+            Eigen::Vector<double, DIM> h=m_domain.diagonal();
+            for(int i=0;i<DIM;i++) {
+                const size_t idx=j % m_numEls[i];
+                j=j / m_numEls[i];
+
+	    
+	    
+                min[i]=m_domain.min()[i]+(idx*(h[i]/((double) m_numEls[i])));
+                max[i]=(min[i]+(h[i]/((double) m_numEls[i])));
+            }
+
+            
+
+            m_regions[idx]= BoundingBox<DIM>(min,max);
+            idx++;
+        }
     }
 
 
@@ -192,22 +221,7 @@ public:
 
     inline BoundingBox<DIM> region(size_t j) const
     {
-	auto j0=j;
-
-	assert(j<n_elements());
-	Eigen::Vector<double, DIM> min,max;
-        Eigen::Vector<double, DIM> h=m_domain.diagonal();
-	for(int i=0;i<DIM;i++) {
-	    const size_t idx=j % m_numEls[i];
-	    j=j / m_numEls[i];
-
-	    
-	    
-	    min[i]=m_domain.min()[i]+(idx*(h[i]/((double) m_numEls[i])));
-	    max[i]=(min[i]+(h[i]/((double) m_numEls[i])));
-	}
-
-	return BoundingBox<DIM>(min,max);
+        return m_regions.at(memId(j));
     }
 
     inline size_t elementForPoint(const Eigen::Ref<const Eigen::Vector<double,DIM> > & pnt) const
@@ -283,6 +297,7 @@ private:
     Eigen::Vector<size_t, DIM> m_numEls;
     std::vector<size_t> m_activeCones;
     std::unordered_map<size_t,size_t> m_coneMap;
+    std::vector<BoundingBox<DIM> > m_regions;
 };
 
 
