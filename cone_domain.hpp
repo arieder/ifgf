@@ -65,13 +65,18 @@ class ConeDomain
 public:
     ConeDomain()
     {
-
+	m_h.fill(1);
     }
 
     ConeDomain(Eigen::Vector<size_t, DIM> numEls, const BoundingBox<DIM>& domain) :
 	m_numEls(numEls),
 	m_domain(domain)
     {
+	if(!domain.isNull()) {
+	    m_h=m_domain.diagonal().array()/numEls.template cast<double>().array();
+	}else{
+	    m_h.fill(1);
+	}
     }
 
     inline void setNElements(Eigen::Vector<size_t, DIM> numEls) {
@@ -99,36 +104,9 @@ public:
     inline void setActiveCones( std::vector<size_t>& cones)
     {
 	m_activeCones=cones;
-        precomputeRegions();
+
     }
 
-    void precomputeRegions()
-    {
-        m_regions.resize(m_activeCones.size());
-        size_t idx=0;
-        for( size_t j: m_activeCones )
-        {
-            auto j0=j;
-
-            assert(j<n_elements());
-            Eigen::Vector<double, DIM> min,max;
-            Eigen::Vector<double, DIM> h=m_domain.diagonal();
-            for(int i=0;i<DIM;i++) {
-                const size_t idx=j % m_numEls[i];
-                j=j / m_numEls[i];
-
-	    
-	    
-                min[i]=m_domain.min()[i]+(idx*(h[i]/((double) m_numEls[i])));
-                max[i]=(min[i]+(h[i]/((double) m_numEls[i])));
-            }
-
-            
-
-            m_regions[idx]= BoundingBox<DIM>(min,max);
-            idx++;
-        }
-    }
 
 
     inline void setConeMap( std::unordered_map<size_t,size_t>& cone_map)
@@ -158,21 +136,14 @@ public:
     {
 	const BoundingBox bbox=region(el);
 	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
-	const auto a=0.5*(bbox.max()-bbox.min()).array();
-	const auto b=0.5*(bbox.max()+bbox.min()).array();
+	const auto a=0.5*m_h.array();
+	const Eigen::Array<double, DIM,1> b=m_domain.min().array()+(indicesFromId(el).template cast<double>().array()+0.5)*m_h.array();	
 
 	for(int i=0;i<pnts.cols();i++) {
 	    tmp.col(i)=(pnts.array().col(i)*a)+b;
 	}
 
-	/*	for(size_t j=0;j<pnts.cols();j++)
-	  {
 
-	    tmp.col(j)=pnts.col(j).array()*a+b;
-
-	    assert(bbox.exteriorDistance(tmp.col(j))<1e-14);
-	    }*/
-	
 	
 	return tmp;
 	    
@@ -186,21 +157,10 @@ public:
 	const BoundingBox bbox=region(el);
 	Eigen::Matrix<double,DIM,Eigen::Dynamic> tmp(DIM,pnts.cols());
 
-	const auto a=0.5*(bbox.max()-bbox.min()).array();
-	const auto b=0.5*(bbox.max()+bbox.min()).array();
+	const auto a=0.5*(m_h).array();
+	const Eigen::Array<double, DIM,1> b=m_domain.min().array()+(indicesFromId(el).template cast<double>().array()+0.5)*m_h.array();
 
 	tmp.array()=(pnts.array().colwise()-b).colwise()/a;
-	
-	/*for(size_t j=0;j<pnts.cols();j++)
-	{	    
-	    assert(bbox.squaredExteriorDistance(pnts.col(j))<1e-12);
-	    
-	    tmp.col(j)=(pnts.col(j).array()-b)/a;
-
-	    
-	    assert(-1-1e-8<=tmp.col(j)[0] && tmp.col(j)[0]<=1+1e-8);
-	    //assert(-1-1e-8<=tmp.col(j)[1] && tmp.col(j)[1]<=1+1e-8);
-	    }*/
 	
 	return tmp;	    
     }
@@ -210,7 +170,6 @@ public:
 	for(int i=0;i<DIM;i++) {
 	    const size_t idx=j % m_numEls[i];
 	    j=j / m_numEls[i];
-
 	    
 	    indices[i]=idx;
 	}
@@ -221,7 +180,22 @@ public:
 
     inline BoundingBox<DIM> region(size_t j) const
     {
-        return m_regions.at(memId(j));
+	size_t idx=0;
+	auto j0=j;
+
+	assert(j<n_elements());
+	Eigen::Vector<double, DIM> min,max;
+	Eigen::Vector<double, DIM> h=m_domain.diagonal();
+	for(int i=0;i<DIM;i++) {
+	    const size_t idx=j % m_numEls[i];
+	    j=j / m_numEls[i];
+	    
+	    
+	    
+	    min[i]=m_domain.min()[i]+(idx*(h[i]/((double) m_numEls[i])));
+	    max[i]=(min[i]+(h[i]/((double) m_numEls[i])));
+	}
+	return  BoundingBox<DIM>(min,max);
     }
 
     inline size_t elementForPoint(const Eigen::Ref<const Eigen::Vector<double,DIM> > & pnt) const
@@ -295,9 +269,9 @@ public:
 private:
     BoundingBox<DIM> m_domain;
     Eigen::Vector<size_t, DIM> m_numEls;
+    Eigen::Vector<double, DIM> m_h;
     std::vector<size_t> m_activeCones;
     std::unordered_map<size_t,size_t> m_coneMap;
-    std::vector<BoundingBox<DIM> > m_regions;
 };
 
 
