@@ -5,7 +5,7 @@
 #include <memory>
 
 #ifdef USE_FAST_HASH
-#include <ankerl/unordered_dense.h>
+#include "unordered_dense.h"
 typedef ankerl::unordered_dense::map<size_t, size_t> IndexMap;
 typedef ankerl::unordered_dense::set<size_t> IndexSet;
 

@@ -7,7 +7,8 @@ string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast -fno-math-errno -ffast-math -funr
 string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Ofast ")
 string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O2 ")
 add_definitions(-DEIGEN_FAST_MATH=1 -DEIGEN_DONT_PARALLELIZE  )
-#add_definitions(-DEIGEN_INITIALIZE_MATRICES_BY_ZERO)
+
+find_package(unordered_dense CONFIG )
 
 
 
