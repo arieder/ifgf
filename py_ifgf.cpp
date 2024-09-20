@@ -7,6 +7,7 @@
 
 #include "double_layer_helmholtz_ifgf.hpp"
 #include "helmholtz_ifgf.hpp"
+#include "modified_helmholtz_ifgf.hpp"
 #include "grad_helmholtz_ifgf.hpp"
 #include "laplace_ifgf.hpp"
 
@@ -32,7 +33,7 @@ PYBIND11_MODULE(pyifgf, m) {
     std::cout<<"running on "<<num_threads<<" threads"<<std::endl;
     auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,   num_threads );
     */
-    addOp<HelmholtzIfgfOperator<3>,std::complex<double> >(m,"HelmholtzIfgfOperator");
+    addOp<ModifiedHelmholtzIfgfOperator<3>,std::complex<double> >(m,"MofifiedHelmholtzIfgfOperator");
     addOp<GradHelmholtzIfgfOperator<3>,std::complex<double> >(m,"GradHelmholtzIfgfOperator")
 	.def("setDx", &GradHelmholtzIfgfOperator<3>::setDx);
 
