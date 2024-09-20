@@ -227,18 +227,12 @@ public:
     {
 	size_t idx=0;
 	int stride=1;
-        /*if(m_domain.squaredExteriorDistance(pnt)>1e-8) {
-	std::cout<<"dom:"<<m_domain<<std::endl;
-	//std::cout<<m_numEls<<std::endl;
-	std::cout<<"pn"<<pnt.transpose()<<std::endl;
-        }*/
-	//assert(m_domain.squaredExteriorDistance(pnt)<1e-8);
 	for(int j=0;j<DIM;j++) {	    
-	    const double q=(pnt[j]-m_domain.min()[j])*m_numEls[j]/m_domain.diagonal()[j];
+	    const int q=std::floor( (float) (pnt[j]-m_domain.min()[j])/m_h[j]);
 	    
-	    //std::cout<<"floor"<<std::floor(q)<<std::endl;
-	    const size_t ij=static_cast<int>( std::floor(std::clamp(q,0.0, m_numEls[j]-1.0)));
-	    //std::cout<<q<<"ij "<<ij<<std::endl;
+
+	    const size_t ij=( std::clamp(q,0, (int) ( m_numEls[j]-1)));
+
 	    idx+=ij*stride;
 	    stride*=m_numEls[j];
 	}

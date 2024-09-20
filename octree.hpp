@@ -652,18 +652,24 @@ public:
 		     //local_active_cones.reserve(domain.n_elements());
 		     for( size_t i : is_cone_active[step])
 		     {			 
-			     ConeRef cone(level, i, local_active_cones.size(), n);
-			     tbb::queuing_mutex::scoped_lock lock(activeConeMutex);
-			     activeCones[step].push_back(cone);
-
-			     int leafStep=0;
-			     if(mode==TwoGrid) {
-				 leafStep=1;
-			     }
+			 ConeRef cone(level, i, local_active_cones.size(), n);
+			 
 			     
-			     if(node->isLeaf() && step==leafStep) {
-				 leafCones.push_back(cone);
+			     if(level< min_recursive_level) { //We dont need the active cone map if we are in the recursive stage
+				 tbb::queuing_mutex::scoped_lock lock(activeConeMutex);
+				 activeCones[step].push_back(cone);
+
+				 int leafStep=0;
+				 if(mode==TwoGrid) {
+				     leafStep=1;
+				 }
+			     
+				 if(node->isLeaf() && step==leafStep) {
+				     leafCones.push_back(cone);
+				 }
+
 			     }
+
 			     local_active_cones.push_back(i);
 			     cone_map[i]=local_active_cones.size()-1;
 			 

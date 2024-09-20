@@ -288,7 +288,7 @@ public:
 	    auto grid= m_src_octree->coneDomain(level-1,pId);		
 	    interpolationData[pId].grid = grid;
 	    interpolationData[pId].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);            
-	    interpolationData[pId].values.fill(0);
+	    //interpolationData[pId].values.fill(0);
 	    interpolationData[pId].order = order;                        
         }
 
@@ -562,7 +562,7 @@ public:
 			double H = bbox.sideLength();
 			
 			
-			tmp_result.local().fill(0);
+			//tmp_result.local().fill(0);
 			transferInterp(interpolationData[childBox], transformedNodes.local(), center, H, parent_center, pH, tmp_result.local());
 						
 			parentInterpolationData[parentId].values.middleRows(parentCone.memId()*stride,stride)+=tmp_result.local();
@@ -611,7 +611,7 @@ public:
 
 		    //std::cout<<step<<" actite="<<grid.activeCones().size()<<std::endl;
 		    i_data[id].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);
-		    i_data[id].values.fill(0);
+		    //i_data[id].values.fill(0);
 		    i_data[id].order=order;
 		    i_data[id].grid=grid;
 	       }
@@ -1389,10 +1389,6 @@ public:
 				  const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
 				  Eigen::Ref<Eigen::Array<T, 1, DIMOUT> > result) const
     {
-#ifdef USE_NGSOLVE
-	static ngcore::Timer t("ngbem single interp");
-	ngcore::RegionTimer reg(t);
-#endif
 
 	Eigen::Array<double,DIM, 1> transformed(DIM);
 	transformCartToInterp(target, transformed, xc, H);
@@ -1417,12 +1413,6 @@ public:
                             const Eigen::Ref<const Eigen::Vector<double, DIM> > &xc, double H,
                             Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > result) const
     {
-#ifdef USE_NGSOLVE
-	static ngcore::Timer t("ngbem eval from interp");
-	ngcore::RegionTimer reg(t);
-#endif
-
-
 	if(targets.cols()==0) {
 	    return;
 	}

@@ -254,12 +254,6 @@ void ChebychevInterpolation::parallel_evaluate(
         
 	//template <typename T, int N_POINTS_AT_COMPILE_TIME, unsigned int DIM, unsigned int DIMOUT, typename Derived1, typename Derived2, int N_AT_COMPILE_TIME, int... OTHER_NS>
 
-#ifdef USE_NGSOLVE
-	static ngcore::Timer t("ngbem ifgf cheb::eval");
-
-	ngcore::RegionTimer reg(t);
-	t.AddFlops (ns.prod()*points.cols()*DIMOUT);
-#endif
 
 
 	//for(int i=0;i<points.cols();)

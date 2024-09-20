@@ -163,7 +163,7 @@ public:
 	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
 	if(step==0) {
-	    base*=2;
+	    base*=3;
 	}
 	    
 	for(int i=0;i<dim;i++) {
