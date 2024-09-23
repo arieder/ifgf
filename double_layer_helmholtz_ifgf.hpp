@@ -171,7 +171,7 @@ public:
 	}
 	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k.real()*H/4 , 1.0); //make sure that k H is bounded
+	    double delta=std::max( k.real()*H/(4+k.imag()) , 1.0); //make sure that k H is bounded
 	    els[i]=base[i]*((int) ceil(delta));	    
 	}
 	    

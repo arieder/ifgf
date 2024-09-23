@@ -129,6 +129,9 @@ public:
 
     inline size_t memId(size_t el) const
     {
+	/*if(!isActive(el)) {
+	    std::cout<<"isactive"<<el<<std::endl;
+	    }*/
 	assert(isActive(el));
 	return m_coneMap.at(el);
 	
@@ -202,6 +205,19 @@ public:
 	return indices;
     }
 
+    inline size_t idFromIndices(const Eigen::Vector<size_t,DIM>& indices) const {
+	size_t id;
+	size_t stride=1;
+	for(int i=0;i<DIM;i++) {
+	    id+=indices[i]*stride;
+	    stride*=m_numEls[i];
+
+	}
+
+	return id;
+    }
+
+
 
     BoundingBox<DIM> region(size_t j) const
     {
@@ -228,7 +244,7 @@ public:
 	size_t idx=0;
 	int stride=1;
 	for(int j=0;j<DIM;j++) {	    
-	    const int q=std::floor( (float) (pnt[j]-m_domain.min()[j])/m_h[j]);
+	    const int q=std::floor( (pnt[j]-m_domain.min()[j])/m_h[j]);
 	    
 
 	    const size_t ij=( std::clamp(q,0, (int) ( m_numEls[j]-1)));
@@ -237,7 +253,9 @@ public:
 	    stride*=m_numEls[j];
 	}
 
-	//assert(idx<n_elements());
+
+	//std::cout<<"pnt: "<<pnt.transpose()<<" "<<idx<<" "<<m_domain<<std::endl;
+	assert(idx<n_elements());
 	return idx;
 
     }

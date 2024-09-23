@@ -47,9 +47,6 @@ public:
 	std::cout<<"creating new ifgf operator. n_leaf="<<maxLeafSize<<" order= "<<order<<" n_elements="<<n_elements<<std::endl;
         m_src_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
 	m_target_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
-	if(order<5)  {
-	    std::cout<<"WARNING:: low order might not work due to the missing check in eval_clenshaw"<<std::endl;
-	}
 	m_baseOrder=order;
 	m_tolerance=tolerance;
 
@@ -279,12 +276,12 @@ public:
 	Eigen::Vector<int, DIM> order;
 	
 	for(size_t pId=0;pId<m_src_octree->numBoxes(level-1);pId++) {
-	    if(m_src_octree->farTargets(level-1,pId).size()==0 && !m_src_octree->parentHasFarTargets(level-1,pId)) {
-		continue;
-	    }
+	    //if( !m_src_octree->hasFarTargetsIncludingAncestors(level-1,pId)) {
+	    //	continue;
+	    //}
 	    BoundingBox bbox = m_src_octree->bbox(level - 1, pId);
 	    double H = bbox.sideLength();
-	    order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);	    
+	    order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder,1);	    
 	    auto grid= m_src_octree->coneDomain(level-1,pId);		
 	    interpolationData[pId].grid = grid;
 	    interpolationData[pId].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);            
@@ -332,6 +329,7 @@ public:
 	    }});
 
 
+
 	    //Get an exemplary bbox to determine the interpolation order
 	    BoundingBox bbox = m_src_octree->bbox(level, 0);
 	    double H0 = bbox.sideLength();
@@ -345,6 +343,12 @@ public:
 	    //make sure the factors for the chebtrafo are precomputed...
 	    for(int d=0;d<DIM;d++) {
 		ChebychevInterpolation::chebvals<double>(order[d]);
+	    }
+
+
+	    //there is no more far field or interpolation happening
+	    if(level<=1) {
+		break;
 	    }
 
 
@@ -367,6 +371,12 @@ public:
 		for (size_t i = r.begin(); i < r.end(); i++) {
 		    const ConeRef ref=m_src_octree->leafCone(level,i);
 		    const size_t boxId=ref.boxId();
+
+		    if( ! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
+			continue;
+		    }
+
+		    
 		    assert(m_src_octree->isLeaf(level,boxId)==true);
 		    BoundingBox bbox = m_src_octree->bbox(level, boxId);
 		    auto center = bbox.center();
@@ -388,7 +398,7 @@ public:
 						 new_weights.segment(srcs.first, nS), center, H,srcs);			
 
 		}});
-
+	
 
 	    //chebtrafo everything
 	    std::cout<<"chebtrafo"<<std::endl;
@@ -399,6 +409,12 @@ public:
 		size_t boxId=cone.boxId();
 		if(!m_src_octree->hasPoints(level,boxId))
 		    continue;
+
+		
+		if( ! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
+		    continue;
+		}
+
 		BoundingBox bbox = m_src_octree->bbox(level, boxId);
 		auto center = bbox.center();
 		double H = bbox.sideLength();
@@ -406,9 +422,11 @@ public:
 		const size_t stride=ho_chebNodes.cols();			
 		//before we can use the interpolation data, we habe to run a chebychev transform on it
 
-		tmp_chebt.local().resize(stride);		
+		tmp_chebt.local().resize(stride);
+
 		ChebychevInterpolation::chebtransform<T,DIM>(interpolationData[boxId].values.middleRows(cone.memId()*stride,stride),tmp_chebt.local(),high_order);
 		interpolationData[boxId].values.middleRows(cone.memId()*stride,stride)=tmp_chebt.local();
+
 	    }});
 
 
@@ -437,7 +455,7 @@ public:
 		    //BoundingBox region=//hoGrid.region(hoCone.id());
 
 
-		    if(level<2 || ! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
+		    if( ! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
 			continue;
 		    }
 
@@ -474,7 +492,6 @@ public:
 	    std::swap(interpolationData,parentInterpolationData);
 	    parentInterpolationData.resize(0);
 
-
 	    std::cout<<"evaluate far field"<<std::endl;
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_target_octree->numPoints()),
 	        [&](tbb::blocked_range<size_t> r) {
@@ -508,14 +525,11 @@ public:
 			result.row(i) += tmp_result.local();
 		    }
 		}});
-
+	
 	    /*#ifdef CHECK_CONNECTIVITY
             std::cout<<"connectivity"<<std::endl<<m_connectivity<<std::endl;
 	    #endif*/
 
-	    if(level==0) {
-		continue;
-	    }
 
 	    std::cout<<"propagating"<<std::endl;
 
@@ -546,7 +560,7 @@ public:
 		   }
 
 
-		    if(level<2  || ! m_src_octree->hasFarTargetsIncludingAncestors(level-1, parentId)){ //we dont need the interpolation info for those levels.
+		    if( ! m_src_octree->hasFarTargetsIncludingAncestors(level-1, parentId)){ //we dont need the interpolation info for those levels.
 			continue;
 		    } 
 
@@ -854,7 +868,7 @@ public:
 	evaluateFarField(level,id, weights, result, refinedData, tmp_result);
 
         //propagate the interpolation data to the parent
-        if(level <=2 || !m_src_octree->parentHasFarTargets(level,id)) //if we won't encounter any more far-fields we can stop
+        if( !m_src_octree->parentHasFarTargets(level,id)) //if we won't encounter any more far-fields we can stop
             return;
         
         size_t parentId = m_src_octree->parentId(level, id);
@@ -1237,7 +1251,7 @@ public:
 	}
 
 	//BoundingBox region=//hoGrid.region(hoCone.id());
-	if(level<2 || ! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
+	if(! m_src_octree->hasFarTargetsIncludingAncestors(level, boxId)){ //we dont need the interpolation info for those levels.
 	    return;
 	}
 

@@ -19,6 +19,7 @@ public:
         IfgfOperator<std::complex<double>, dim, 1, GradHelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tolerance),
         k(waveNumber)
     {
+	std::cout<<"creating grad helmholtz waveNr="<<waveNumber<<std::endl;
     }
 
     typedef std::complex<double > T ;
@@ -47,7 +48,7 @@ public:
 
 	if constexpr(dx==-1) {
 	    double d = x.norm();
-	    return (d == 0) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
+	    return (d < 1e-12) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
 	}else{
 	    return d<1e-12 ? 0.0:   -(1.0 / (4.0 * M_PI)) * (1.0/(d*d)) * exp(-k * d) *(-k-1.0/d)*x[m_dx];
 	}
@@ -178,7 +179,7 @@ public:
 
 		for (int i = 0; i < x.cols(); i++) {
 		    const double d2 = (x.col(i) - y.col(j)).matrix().squaredNorm();
-		    const double id=1.0/sqrt(d2);
+		    const double id=d2>1e-12 ? 1.0/sqrt(d2) : 0.0;
 		    const double d=d2*id;
 
 		    const double w=  (dc) *id;
@@ -207,41 +208,42 @@ public:
         return result;
     }
 
+
     inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
     {
 	
 	Eigen::Vector<int,dim> order;
+
 	order.fill(baseOrder);
 	order[0]=std::max((int) baseOrder-2,1);
 
-
-	if(step==1) {
-	    for(int i=0;i<dim;i++){
-		order[i]=(int) 2*order[i];
-	    }
+	if(step==0) {
+	    order.array()-=2;
 	}
 	
         return order;
     }
 
+
+
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
-	const auto orders=orderForBox(H,baseOrder,0);
+	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
-	if(step==1) {
-	    base[0]=1;
-	    base[1]=2;
-	    base[2]=4;	    
+	if(step==0) {
+	    base*=4;
 	}
-	
+	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k.real()*H/(orders[i]) , 1.0); //make sure that k H/p is bounded by 1. this guarantees spectral convergence w.r.t. p.	   
+	    double delta=std::max( std::abs(k.imag())*H/(3.0+k.real()) , 1.0); //make sure that k H is bounded
 	    els[i]=base[i]*((int) ceil(delta));	    
 	}
-
+	    
 	return els;	    
     }
 
+
+    
  
 
 

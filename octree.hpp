@@ -388,8 +388,11 @@ public:
 
 
 		//do nothing  if there are no sources
-		if(node==0 || node->pntRange().first==node->pntRange().second)
+		//TODO this breaks some corner cases where the boxId
+		//is no longer the index in certain vectors
+		/*if(node==0 || node->pntRange().first==node->pntRange().second) {
 		    continue;
+		    }*/
 
 		const Point xc=node->boundingBox().center();
 		
@@ -434,11 +437,12 @@ public:
 			//TODO check if this is necessary
 			const ConeDomain<DIM>& p_grid=parent->coneDomain();
 			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
-			for(size_t el : p_grid.activeCones() ) {			
-			    for (size_t i=0;i<chebNodes.cols();i++)				auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
+			for(size_t el : p_grid.activeCones() ) {
+			    for (size_t i = 0; i < chebNodes.cols(); i++) {
+				auto pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
 				box.extend(Util::cartToInterp<DIM>(pnt,xc,H).matrix());
 			    }
-			} 
+			}
 		    }
 		}
 
@@ -536,8 +540,8 @@ public:
 			//const auto s=Util::cartToInterp<DIM>(target_points.col(i),xc,H);			  
 			auto coneId=domain.elementForPoint(s.col(i));
 			auto coneId2=coarseDomain.elementForPoint(s.col(i));
-			is_cone_active[0].insert(coneId);
 			is_cone_active[1].insert(coneId2);
+			is_cone_active[0].insert(coneId);
 		    }
 		}
 
@@ -549,10 +553,11 @@ public:
 		    const double pH=parent->boundingBox().sideLength();
 
 		    const ConeDomain<DIM>& p_grid=parent->coneDomain();
-		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
 		    
 		    
 		    if(mode==Decomposition){
+			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
+
 			//now we add all the points used in the point-and-shoot method. Second rotation:
 			for(size_t el : p_grid.activeCones() ) {
 			    const auto direction=xc-pxc;
@@ -601,22 +606,21 @@ public:
 			PointArray pnts(DIM,HoChebNodes.cols());
 			PointArray interp_pnts(DIM,HoChebNodes.cols());
 			for(size_t el : p_hoGrid.activeCones() ) {
-			    const auto direction=xc-pxc;
 			    pnts=Util::interpToCart<DIM>(p_hoGrid.transform(el,HoChebNodes).array(),pxc,pH);
 			    Util::cartToInterp2<DIM>(pnts.array(),xc,H,interp_pnts.array());
 			    for (size_t i=0;i<HoChebNodes.cols();i++) {
 				auto coneId=domain.elementForPoint(interp_pnts.col(i));
 				auto coneId2=coarseDomain.elementForPoint(interp_pnts.col(i));				
-				is_cone_active[0].insert(coneId);
 				is_cone_active[1].insert(coneId2);
+				is_cone_active[0].insert(coneId);
 			    }
 			}			
 
 		    }
 		    else   {
 			//now we add all the points used in the regular method
-			for(size_t el : p_grid.activeCones() ) {
-	    
+			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
+			for(size_t el : p_grid.activeCones() ) {	    
 			    for (size_t i=0;i<chebNodes.cols();i++) {
 				Point cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
 				Point interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
@@ -629,22 +633,31 @@ public:
 		}
 
 
-		/*if(mode==TwoGrid) {
-		    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(H,1));
+		/*
+		if(mode==TwoGrid) {
+		    //mark all children of active elements in the coarse grid also as active.
 		    //reinterpolation step from HO to regular
-		    PointArray interp_pnts(DIM, chebNodes.cols());
-		    for(size_t el=0;el<domain.n_elements();el++) {
-			if(is_cone_active[0].count(el)>0) {
-			    interp_pnts=domain.transform(el,chebNodes).array();				
-			    for (size_t i=0;i<chebNodes.cols();i++) {
-				
-				auto coneId=coarseDomain.elementForPoint(interp_pnts.col(i));				
-				is_cone_active[1].insert(coneId);
+		    const int n_children=domain.n_elements()/coarseDomain.n_elements();
+		    const int factor=domain.n_elements(0)/coarseDomain.n_elements(0);
+		    for(size_t cone : is_cone_active[1]) {
+			Eigen::Vector<size_t, DIM> indices=coarseDomain.indicesFromId(cone);
+			indices*=factor;
+			for(int i=0;i<n_children;i++) {
+			    //compute the different indices given the id
+			    Eigen::Vector<size_t, DIM> d;
+			    size_t tmp=i;
+			    for(int l=0;l<DIM;l++) {
+				const size_t idx=tmp % factor;
+				tmp=tmp / factor;
+	    
+				d[l]=idx;
 			    }
 			    
+			    const size_t childId=domain.idFromIndices(indices+d);
+			    is_cone_active[0].insert(childId);
 			}
-		    }
-		    }*/
+			}
+			}*/
 		
 		for (int step=0;step<2;step++ ) {
 		     std::vector<size_t> local_active_cones;
@@ -722,10 +735,11 @@ public:
 		    }
 		});
 		m_farFieldBoxes.push_back(ffB);
-	    }else {
-		
+	    }else {       	
 		m_farFieldBoxes.push_back(std::vector<std::vector<size_t> >());
 	    }
+
+	    assert(m_farFieldBoxes.size()==level+1);
 
 	}
 

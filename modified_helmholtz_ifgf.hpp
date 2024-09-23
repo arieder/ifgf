@@ -129,7 +129,7 @@ public:
     }
 
 
-        inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
+    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
     {
 	
 	Eigen::Vector<int,dim> order;
@@ -153,7 +153,7 @@ public:
 	}
 	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k.real()*H/4 , 1.0); //make sure that k H is bounded
+	    double delta=std::max( std::abs(k.imag())*H/(2.0+k.real()) , 1.0); //make sure that k H is bounded
 	    els[i]=base[i]*((int) ceil(delta));	    
 	}
 	    
