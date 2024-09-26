@@ -254,7 +254,7 @@ public:
 	std::cout<<"done"<<std::endl;
 #endif
 #ifdef  RECURSIVE_MULT
-	int min_boxes=8;
+	int min_boxes=MIN_RECURSIVE_BOXES;
         int recursive_level=0;
         for(;recursive_level<m_src_octree->levels();recursive_level++) {
             if(m_src_octree->numBoxes(recursive_level) > min_boxes) {
