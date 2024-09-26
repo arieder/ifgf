@@ -209,6 +209,7 @@ public:
     }
 
 
+    
     inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
     {
 	
@@ -216,31 +217,43 @@ public:
 
 	order.fill(baseOrder);
 	order[0]=std::max((int) baseOrder-2,1);
+	order[1]=baseOrder;
+	order[2]=std::round(baseOrder*1.5);
 
 	if(step==0) {
-	    order.array()-=2;
+	    order.array().fill(baseOrder-2);
+	    order[0]-=2;
+	    //order[2]=baseOrder;
+	    
+	    //order.array()-=2;
+	    //order.array()-=2;
 	}
 	
         return order;
     }
 
-
-
     inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
 	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
-	if(step==0) {
-	    base*=4;
+
+	if(step==0){
+	    base*=3;
+	    base[2]*=2;
 	}
 	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( std::abs(k.imag())*H/(3.0+k.real()) , 1.0); //make sure that k H is bounded
-	    els[i]=base[i]*((int) ceil(delta));	    
+	    //int delta=std::ceil(std::max( std::abs(k.imag())*H/(2*(2+k.real())) , 1.0)); //make sure that k H is bounded
+	    double delta=std::max( std::abs(k.imag())*H/4., 1.0)*exp(-0.2*(dim/sqrt(dim))*H*k.real());
+	    
+
+	    els[i]=std::max(base[i]*((int) ceil(delta)),(size_t) 1);	    
 	}
 	    
 	return els;	    
     }
+
+
 
 
     

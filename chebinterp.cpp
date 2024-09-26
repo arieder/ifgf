@@ -56,7 +56,7 @@ void ChebychevInterpolation::fast_evaluate_tp(
 	size_t n_y = points2_t.cols();
 
 
-	Eigen::Array<T, Eigen::Dynamic, 1> M(ns.prod());
+	Eigen::Array<T, Eigen::Dynamic, 1> M(n_y*n_values);
 
 	//std::cout<<"building m"<<DIM<<std::endl;
 	if(axis==2) {
@@ -104,7 +104,7 @@ void ChebychevInterpolation::fast_evaluate_tp(
 		//Eigen::Map<Eigen::Array<T, Eigen::Dynamic, 1>, 0, Eigen::Stride<Eigen::Dynamic,1> > B
 		//    (dest.data()+l, n_points, Eigen::Stride<Eigen::Dynamic,1>(n_points, 1));                   
 
-		tmp.fill(0);
+		//tmp.fill(0);
 		__eval<T, DIM-1, 3,-1,-1,-1>(points_t,M.segment(l*n_values,n_values),
 				    ns.template tail(DIM-1), tmp, 0, n_points);
 

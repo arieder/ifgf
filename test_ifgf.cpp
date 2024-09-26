@@ -7,12 +7,12 @@
 #include "ifgfoperator.hpp"
 #include "octree.hpp"
 
-#include "combined_field_helmholtz_ifgf.hpp"
+#include "grad_helmholtz_ifgf.hpp"
 
 const int dim=3;
 
 typedef std::complex<double> Complex;
-const double  kappa = 10;
+const Complex  kappa = Complex(2,10);
 typedef Eigen::Vector<double,dim> Point;
 std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
 {    
@@ -23,7 +23,7 @@ std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
 	* ( nxy * (Complex(1,0)*1. - Complex(0,kappa)*norm)  - Complex(0,kappa)*norm*norm);
 	// return kern;*/
 
-    auto kern = exp(Complex(0,kappa)*norm) / (4 * M_PI * norm);
+    auto kern = exp(-kappa*norm) / (4 * M_PI * norm);
     //x	* ( nxy * (Complex(1,0)*1. - Complex(0,kappa)*norm)  - Complex(0,kappa)*norm*norm);
 	// return kern;*/
     
@@ -67,7 +67,8 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(kappa,10,9,1,-1e-8); //3
+    GradHelmholtzIfgfOperator<dim> op(kappa,10,10,1,-1e-8); //3
+    op.setDx(-1);
 
     PointArray srcs(3,N);
     //PointArray srcs=load_csv_arma<PointArray>("srcs.csv");

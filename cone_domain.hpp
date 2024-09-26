@@ -106,6 +106,11 @@ public:
     inline constexpr size_t n_elements(size_t d) const {
 	return m_numEls[d];
     }
+
+    inline constexpr Eigen::Vector<size_t,DIM> num_elements() const {
+	return m_numEls;
+    }
+
     
 
     inline const std::vector<size_t>& activeCones() const

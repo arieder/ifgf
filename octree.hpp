@@ -21,7 +21,14 @@
 #include <tbb/spin_mutex.h>
 typedef std::pair<size_t, size_t> IndexRange;
 
-//#define  EXACT_INTERP_RANGE
+// #define  EXACT_INTERP_RANGE
+
+#ifdef BE_FAST
+const int N_STEPS=4;
+#else
+const int N_STEPS=2;
+#endif
+
 
 
 template<typename T, size_t DIM>
@@ -47,7 +54,7 @@ public:
 
         IndexRange m_pntRange;
 
-	std::array<ConeDomain<DIM>,2> m_coneDomain;
+	std::array<ConeDomain<DIM>,N_STEPS> m_coneDomain;
 
         BoundingBox<DIM> m_bbox;
 
@@ -379,7 +386,7 @@ public:
 	    std::cout<<"l= "<<level<<std::endl;
 	    //update all nodes in this level
 
-	    std::array<std::vector<ConeRef>,2> activeCones;
+	    std::array<std::vector<ConeRef>,N_STEPS> activeCones;
 	    std::vector<ConeRef> leafCones;
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
             for(size_t n=r.begin();n<r.end();++n) {
@@ -506,7 +513,7 @@ public:
 
 		
 		ConeDomain<DIM> domain(N_for_H(H,0),box);
-		ConeDomain<DIM> trans_domain(N_for_H(2*H,0),tbox);
+		ConeDomain<DIM> trans_domain(N_for_H(2*H,1),tbox);
 
 		auto hoN=N_for_H(H,1);
 
@@ -527,7 +534,8 @@ public:
 		// 0: where do i need to compute the points directly/from the children in order to be able to sample FF and first rotation
 		// 1: where do i need to compute the points using  the first rotation in order to be able to compute the translation
 		// 2: where do i need to compute the points using the translation in order to be able to compute the second rotation
-		std::array<IndexSet,2> is_cone_active; 
+		
+		std::array<IndexSet,N_STEPS> is_cone_active; 
 		
 
 		PointArray s(DIM,32);
@@ -552,11 +560,11 @@ public:
 		    const Point pxc=parent->boundingBox().center();
 		    const double pH=parent->boundingBox().sideLength();
 
-		    const ConeDomain<DIM>& p_grid=parent->coneDomain();
+		    const ConeDomain<DIM>& p_grid=parent->coneDomain(1);
 		    
 		    
-		    if(mode==Decomposition){
-			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
+		    if(mode==Decomposition){			
+			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(H,1));
 
 			//now we add all the points used in the point-and-shoot method. Second rotation:
 			for(size_t el : p_grid.activeCones() ) {
@@ -566,35 +574,33 @@ public:
 
 			    for (size_t i=0;i<points.cols();i++) {
 				auto coneId=trans_domain.elementForPoint(points.col(i));
-				is_cone_active[2].insert(coneId);
+				is_cone_active[3].insert(coneId);
 			    }
 			}
 
 
 			//translation
-			for(size_t el=0;el<trans_domain.n_elements();el++) {
-			    if(is_cone_active[2].count(el)>0) {			    
-				auto points=trans_domain.translated_points(el,chebNodes,xc,H,pxc,pH);
+			for(size_t el : is_cone_active[3] ) {	    	    
+			    auto points=trans_domain.translated_points(el,chebNodes,xc,H,pxc,pH);
 
-				for (size_t i=0;i<points.cols();i++) {
-				    auto coneId=domain.elementForPoint(points.col(i));
-				    is_cone_active[1].insert(coneId);
-				}
-			    }
+			    for (size_t i=0;i<points.cols();i++) {
+				auto coneId=coarseDomain.elementForPoint(points.col(i));
+				is_cone_active[2].insert(coneId);
+			    }			
 			}
 
 
 			//first rotation
-			for(size_t el=0;el<domain.n_elements();el++) {
-			    if(is_cone_active[1].count(el)>0) {
-				const auto direction=xc-pxc;
-				auto points=domain.rotated_points(el,chebNodes,direction, true);
+			for(size_t el : is_cone_active[2] ) {	    	    
+			    const auto direction=xc-pxc;
+			    PointArray points=coarseDomain.rotated_points(el,chebNodes,direction, true);
 
-				for (size_t i=0;i<points.cols();i++) {
-				    auto coneId=domain.elementForPoint(points.col(i));
-				    is_cone_active[0].insert(coneId);
-				}
-			    }
+			    for (size_t i=0;i<points.cols();i++) {
+				auto coneId=domain.elementForPoint(points.col(i));
+				auto coneId2=coarseDomain.elementForPoint(points.col(i));				
+				is_cone_active[1].insert(coneId2);
+				is_cone_active[0].insert(coneId);
+			    }			    
 			}
 		    }
 		    else if(mode==TwoGrid) {
@@ -659,7 +665,7 @@ public:
 			}
 			}*/
 		
-		for (int step=0;step<2;step++ ) {
+		for (int step=0;step<N_STEPS;step++ ) {
 		     std::vector<size_t> local_active_cones;
 		     IndexMap cone_map;
 		     //local_active_cones.reserve(domain.n_elements());
@@ -673,7 +679,7 @@ public:
 				 activeCones[step].push_back(cone);
 
 				 int leafStep=0;
-				 if(mode==TwoGrid) {
+				 if(mode!=Regular) {
 				     leafStep=1;
 				 }
 			     
@@ -689,12 +695,12 @@ public:
 		     }
 
 		     //local_active_cones.trim();
-		     ConeDomain d0=domain;
-		     if(step==2 && mode==Decomposition) {
+		     ConeDomain d0=coarseDomain;
+		     if(step==3 && mode==Decomposition) {
 			 d0=trans_domain;
 		     }
-		     if(step==1 && mode==TwoGrid) {
-			 d0=coarseDomain;
+		     if(step==0 && mode!=Regular) {
+			 d0=domain;
 		     }
 		     d0.setActiveCones(local_active_cones);		
 		     d0.setConeMap(cone_map);		     
@@ -1074,7 +1080,7 @@ private:
 private:
     std::shared_ptr<OctreeNode > m_root;
     std::vector<std::vector<std::shared_ptr<OctreeNode> > > m_nodes;
-    std::vector<std::array<std::vector<ConeRef>,2> > m_activeCones;
+    std::vector<std::array<std::vector<ConeRef>,N_STEPS> > m_activeCones;
     std::vector<std::vector<ConeRef> > m_leafCones;
     std::vector<std::vector<std::vector<size_t> > > m_farFieldBoxes;  // on each level: for each target point y store the source boxes such that y is in the farfield 
     std::vector<unsigned int> m_numBoxes;

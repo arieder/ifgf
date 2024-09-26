@@ -1,4 +1,4 @@
-CPPFLAGS=-Ofast   -g   -DEIGEN_FAST_MATH=1  -DEIGEN_DONT_PARALLELIZE   -march=native -std=c++20   -I/usr/include/eigen3/
+CPPFLAGS=-Ofast -DNDEBUG     -DEIGEN_FAST_MATH=1  -DEIGEN_DONT_PARALLELIZE   -march=native -std=c++20   -I/usr/include/eigen3/
 
 DEPS=chebinterp.hpp
 
