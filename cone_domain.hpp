@@ -248,6 +248,11 @@ public:
     {
 	size_t idx=0;
 	int stride=1;
+
+	if(m_domain.squaredExteriorDistance(pnt)>0) {
+	    return SIZE_MAX;
+	}
+	   
 	for(int j=0;j<DIM;j++) {	    
 	    const int q=std::floor( (pnt[j]-m_domain.min()[j])/m_h[j]);
 	    

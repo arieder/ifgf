@@ -159,6 +159,41 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
 	return ps;
     }
 
+    template<int DIM>
+    inline Eigen::Vector<size_t,DIM> indicesFromId(size_t j, const Eigen::Vector<size_t,DIM> &ns)  {
+	Eigen::Vector<size_t,DIM> indices;	
+	for(int i=0;i<DIM;i++) {
+	    const size_t idx=j % ns[i];
+	    j=j / ns[i];
+	    
+	    indices[i]=idx;
+	}
+
+	return indices;
+    }
+
+
+
+    template <typename T,int DIM,int DIMOUT>
+    double compute_slice_norm(const Eigen::Ref<const Eigen::Array<T,Eigen::Dynamic, DIMOUT> >& data, const Eigen::Vector<size_t, DIM>& ns,int axis)
+    {
+	double v1=0;
+	double v2=0;
+	
+	for(size_t idx=0;idx<data.rows();idx++) {
+	    Eigen::Vector<size_t,DIM> split=indicesFromId(idx,ns);
+	    double n=data.row(idx).matrix().squaredNorm();
+	    
+	    v1=std::max(n,v1);
+	    if(split[axis]==ns[axis]-1) {
+		v2=std::max(n,v2);
+	    }
+	}
+
+	return sqrt(v2);//sqrt(v2)/std::max(1.,sqrt(v1));
+    }
+
+
 
     
 };

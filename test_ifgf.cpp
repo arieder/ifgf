@@ -12,7 +12,7 @@
 const int dim=3;
 
 typedef std::complex<double> Complex;
-const Complex  kappa = Complex(2,10);
+const Complex  kappa = Complex(0,-10);
 typedef Eigen::Vector<double,dim> Point;
 std::complex<double> kernel(const Point& x, const Point& y, const Point& normal)
 {    
@@ -67,8 +67,9 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    GradHelmholtzIfgfOperator<dim> op(kappa,10,10,1,-1e-8); //3
-    op.setDx(-1);
+    HelmholtzIfgfOperator<dim> op(-kappa.imag(),10,3,1,1e-5); //3
+    //GradHelmholtzIfgfOperator<dim> op(kappa,10,3,1,1e-5); //3
+    //op.setDx(-1);
 
     PointArray srcs(3,N);
     //PointArray srcs=load_csv_arma<PointArray>("srcs.csv");

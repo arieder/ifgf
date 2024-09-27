@@ -17,7 +17,8 @@ public:
                           size_t order,
 			      size_t n_elem=1,double tolerance=-1):
         IfgfOperator<std::complex<double>, dim, 1, GradHelmholtzIfgfOperator<dim> >(leafSize,order, n_elem,tolerance),
-        k(waveNumber)
+        k(waveNumber),
+	m_dx(-1)
     {
 	std::cout<<"creating grad helmholtz waveNr="<<waveNumber<<std::endl;
     }
@@ -210,19 +211,22 @@ public:
 
 
     
-    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
+    inline Eigen::Vector<int,dim> orderForBox(double H, Eigen::Vector<int,dim> baseOrder,int step=0) const
     {
 	
-	Eigen::Vector<int,dim> order;
+	Eigen::Vector<int,dim> order=baseOrder;
 
-	order.fill(baseOrder);
-	order[0]=std::max((int) baseOrder-2,1);
-	order[1]=baseOrder;
-	order[2]=std::round(baseOrder*1.5);
+	//order[2]=std::round(order[2]*1.5);
+	// order.fill(baseOrder);
+	// order[0]=std::max((int) baseOrder-3,1);
+	// order[1]=baseOrder;
+	// order[2]=std::round(baseOrder*1.5);
 
 	if(step==0) {
-	    order.array().fill(baseOrder-2);
-	    order[0]-=2;
+	    order=baseOrder.array()-3;//(baseOrder.array().template cast<double>()*Eigen::log(4./baseOrder.array().template cast<double>())).template cast<int>();
+		//std::cout<<"order="<<order.transpose()<<std::endl;
+	    //order[0]-=2;
+	    //order[2]=std::round(baseOrder[2]/1.3);
 	    //order[2]=baseOrder;
 	    
 	    //order.array()-=2;
@@ -232,14 +236,14 @@ public:
         return order;
     }
 
-    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
+    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, Eigen::Vector<int,dim> baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
 	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
 
 	if(step==0){
 	    base*=3;
-	    base[2]*=2;
+	    //base[2]*=2;
 	}
 	    
 	for(int i=0;i<dim;i++) {
@@ -254,9 +258,12 @@ public:
     }
 
 
+    inline  double  cutoff_limit(double H) const
+    {
+	return  std::max(1e-3,std::abs(k.real())*H/abs(log(0.5*this->tolerance())));
+    }
 
-
-    
+   
  
 
 

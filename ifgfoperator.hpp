@@ -37,7 +37,7 @@ public:
 	if constexpr (DIM==3) {
 	    m_base_n_elements[0]=1;
 	    m_base_n_elements[1]=2;
-	    m_base_n_elements[2]=2;
+	    m_base_n_elements[2]=4;
 	}else {
 	    m_base_n_elements[0]=1;
 	    m_base_n_elements[1]=2;
@@ -47,7 +47,7 @@ public:
 	std::cout<<"creating new ifgf operator. n_leaf="<<maxLeafSize<<" order= "<<order<<" n_elements="<<n_elements<<std::endl;
         m_src_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
 	m_target_octree = std::make_unique<Octree<T, DIM> >(maxLeafSize);
-	m_baseOrder=order;
+	m_baseOrder.fill(order);
 	m_tolerance=tolerance;
 
 
@@ -79,57 +79,58 @@ public:
         m_numSrcs = srcs.cols();
 
 	if(m_tolerance>0) {
-	    if(m_tolerance> 1e-4) 
-		m_baseOrder=4;
-	    else if(m_tolerance > 1e-10)
-		m_baseOrder=8;
-	    else
-		m_baseOrder=16;
+	
+	    //m_base_n_elements*=estimateRefinement(m_tolerance,RefineH);
+	    m_baseOrder=estimateRefinement(m_tolerance,RefineP).template cast<int>();
 
-	    m_base_n_elements*=estimateRefinement(m_tolerance,RefineH);
-	    //m_baseOrder=estimateOrder(m_tolerance);
+	    std::cout<<"settled on order="<<m_baseOrder.transpose()<<std::endl;
+	}else {
+	    m_baseOrder[0]-=2; 
 	}
 
 
 	std::cout<<"calculating interp range"<<std::endl;
 	m_src_octree->calculateInterpolationRange([this](double H,int step){return static_cast<Derived *>(this)->orderForBox(H, m_baseOrder,step);},
-						  [this](double H, int step){return static_cast<Derived *>(this)->elementsForBox(H, this->m_baseOrder,this->m_base_n_elements,step);},*m_target_octree);
+						  [this](double H, int step){return static_cast<Derived *>(this)->elementsForBox(H, this->m_baseOrder,this->m_base_n_elements,step);},
+						  [this](double H){return static_cast<Derived *>(this)->cutoff_limit(H);},
+						  *m_target_octree);
 
 	std::cout<<"done initializing"<<std::endl;
     }
 
 
     
-    int estimateRefinement(double tol,RefinementType refine)
-    {
-	std::cout<<"estimating the order needed to achieve "<<tol<< "using "<< (refine==RefineH ? "h":"p")<<"-refinement"<<std::endl;
+    Eigen::Vector<size_t, DIM>  estimateRefinement(double tol,RefinementType refine)
+    { 
+	std::cout<<"estimating the order needed to achieve "<<tol<< "using "<< (refine==RefineH ? "h":"p")<<"-refinement"<<m_baseOrder<<" "<<m_base_n_elements.transpose()<<std::endl;
 	//use n boxes randomly to estimate the interpolation error
 	const size_t level=m_src_octree->levels()-1;
 	const size_t Nboxes= m_src_octree->numBoxes(level);
-	const size_t sampleBoxes=10;
+	const size_t sampleBoxes=20;
 	const size_t stride= Nboxes/sampleBoxes;
 
 	std::cout<<"working on level"<<level<<" "<<m_src_octree->numBoxes(level)<<std::endl;
 
-	auto ref=tbb::parallel_reduce(
-					tbb::blocked_range<int>(0,sampleBoxes),
-					1,
-					[&](tbb::blocked_range<int> r, int order) {
+	auto ref=tbb::parallel_reduce<tbb::blocked_range<size_t>,Eigen::Vector<size_t,DIM> >(
+					tbb::blocked_range<size_t>(0,sampleBoxes),
+					Eigen::Vector<size_t,DIM>::Zero(),					
+					[&](const tbb::blocked_range<size_t>& r, const Eigen::Vector<size_t, DIM>& refinements) {
+					    Eigen::Vector<size_t,DIM> tmp=refinements;
 					    for(size_t i=r.begin();i<r.end();i++)
 					    {
 						const size_t boxId=i*stride;
-						order=std::max(order, estimateRefinementOnBox(tol,level,boxId,refine));
+						tmp=refinements.cwiseMax(estimateRefinementOnBox(tol,level,boxId,refine));
 					    }
-					    return order;
-					},[](int a, int b){return std::max(a,b);});
+					    return tmp;
+					},[](const Eigen::Vector<size_t, DIM>&  a, const Eigen::Vector<size_t, DIM>& b) -> Eigen::Vector<size_t,DIM> {return  a.cwiseMax(b);});
 
 	std::cout<<"using refinemnt="<<ref<<std::endl;;
 	return ref;
     }
 
-    int estimateRefinementOnBox(double tol,size_t level,size_t id, RefinementType refine)
+    Eigen::Vector<size_t,DIM> estimateRefinementOnBox(double tol,size_t level,size_t id, RefinementType refine)
     {
-	/*const int maxR=refine== RefineH ? 4 : 15;
+	const int maxR=refine== RefineH ? 4 : 10;
 	
 	BoundingBox bbox = m_src_octree->bbox(level, id);
         auto center = bbox.center();
@@ -139,18 +140,13 @@ public:
 	
 	double smax=sqrt(DIM)/DIM;
 	//if the sources and targets are well-separated we don't have to cover the near field 
-	const double dist=m_src_octree->bbox(0,0).exteriorDistance(m_target_octree->bbox(0,0));
-	if(dist >0) {
-	    smax=std::min(smax, H/dist);
-	}
-	const double smin=H/(m_target_octree->bbox(0,0).distanceToBoundary(center));
-
+	const double smin=static_cast<Derived *>(this)->cutoff_limit(H);
+	std::cout<<"working on smin="<<smin<<" H="<<H<<std::endl;
 	
 	BoundingBox<DIM> int_box;
 	int_box.min()(0)=smin;
 	int_box.max()(0)=smax;
 	
-	const size_t n_samples=150;
 	//now scale to (smin,smax) x (0,PI) x (-M_PI,M_PI) (in 3d)
 	if constexpr(DIM==2) {	    
 	    int_box.min()(1)=-M_PI;
@@ -163,56 +159,62 @@ public:
 	    int_box.max()(2)=M_PI;
 	}
 
-	int base=0;
-	double error=std::numeric_limits<double>::max();
-	int new_p=1;
-	int new_n_els=0;
+	Eigen::Vector<size_t,DIM> base;
+	base.fill(0);;
+	Eigen::Vector<double, DIM> error;
+	error.fill(std::numeric_limits<double>::max());
 
-	while(error > tol && base<maxR) {
-	    ++base;
-	    new_p=refine==RefineP ? m_baseOrder+base: m_baseOrder;
-	    new_n_els=refine==RefineH ?  pow(2,base-1) : 1;
+
+        Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Random(nS);
+
+	
+	Eigen::Vector<size_t,DIM> new_n_els;
+	Eigen::Vector<int,DIM> new_p;
+	
+	
+	
+	while(error.maxCoeff() > tol && base.maxCoeff()<maxR) {	    
+	    new_p=refine==RefineP ? m_baseOrder+base.template cast<int>(): m_baseOrder;
+	    new_n_els=refine==RefineH ?  m_base_n_elements.array()*Eigen::pow(2*Eigen::Vector<size_t, DIM>::Ones().array(),base.array()) : m_base_n_elements;
 	    
 		
-	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p );
+	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p.array()+1,1 );
+
 	    //std::cout<<"trying order"<<order<<std::endl;
-	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, new_p, m_base_n_elements * new_n_els );
+	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, new_p.array()+1,  new_n_els,1 );
+
+	    //std::cout<<"trying orer"<<order.transpose()<<" and "<<n_els.transpose()<<"  elements"<<std::endl;
 
 	    ConeDomain<DIM> grid(n_els,int_box);
 	    PointArray chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
 	    PointArray transformedNodes(DIM,chebNodes.cols());
-		
-	    const size_t stride=chebNodes.cols();
-	    error=0;
-	    for (int el =0;el<grid.n_elements();el++) {
-		Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Random(nS);
-		transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
+	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> data(chebNodes.cols(),DIMOUT);
+	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> trafo_data(chebNodes.cols(),DIMOUT);
+	    
+	    error.fill(0);
+	    size_t el=(grid.n_elements()*Eigen::Vector<size_t,1>::Random().value())/SIZE_MAX;
+	    transformInterpToCart(grid.transform(el,chebNodes), transformedNodes, center, H);
 
-		auto data= static_cast<const Derived *>(this)->evaluateFactoredKernel
-		    (m_src_octree->points(srcs), transformedNodes, weights, center, H,srcs);
+	    data= static_cast<const Derived *>(this)->evaluateFactoredKernel
+		(m_src_octree->points(srcs), transformedNodes, weights, center, H,srcs);
 
-		
-		transformInterpToCart(grid.transform(el,samplePoints), transformedSample, center, H);
-
-		auto exact= static_cast<const Derived *>(this)->evaluateFactoredKernel
-		    (m_src_octree->points(srcs), transformedSample, weights, center, H,srcs);
-
-		double norm=std::max(exact.matrix().norm(),1.);
-		Eigen::Array<T,Eigen::Dynamic,DIMOUT> approx(samplePoints.cols(),DIMOUT);
-		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(samplePoints,data,approx,order);
-		exact.matrix()-=approx.matrix();
-		error=std::max(error,exact.cwiseAbs().maxCoeff()/norm);
+	    ChebychevInterpolation::chebtransform<T,DIM>(data,trafo_data,order);
+	    for(int d=0;d<DIM;d++) {
+		const double e=Util::compute_slice_norm<T,DIM,DIMOUT>(trafo_data,order.template cast<size_t>(), d);
+		//std::cout<<"d="<<d<<" e="<<e<<std::endl;;
+		error[d]=std::max(error[d],e);
 	    }
-	    //std::cout<<"error2="<<error<<" at "<<base<<std::endl;;
-	    //error=sqrt(error)/grid.n_elements();
-	    //std::cout<<"order="<<order<<" error="<<error<<std::endl;
+		
+	    double maxe=error.maxCoeff();
+	    for(int d=0;d<DIM;d++){
+		if(error[d] > m_tolerance ) {
+		    base[d]+=1;
+		}
+	    }
+	    std::cout<<"error="<<error<<std::endl;
 	}
-
-	return refine == RefineH ? new_n_els : new_p;
-
-	*/
-
-	return 1;
+	
+	return refine == RefineH ? new_n_els : new_p.template cast<size_t>();
     }
     
     
@@ -220,7 +222,7 @@ public:
 
     Eigen::Array<T, Eigen::Dynamic,DIMOUT> mult(const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights)
     {
-	std::cout<<"mult "<<m_baseOrder<<std::endl;
+	std::cout<<"mult "<<m_baseOrder.transpose()<<std::endl;
 
 	std::cout<<"permutation"<<std::endl;
         Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation (weights, m_src_octree->permutation());
@@ -348,7 +350,7 @@ public:
 
 
 	    //there is no more far field or interpolation happening
-	    if(level<=1) {
+	    if(level<1) {
 		break;
 	    }
 
@@ -729,7 +731,7 @@ public:
 	}
         assert((m_connectivity.array() - 1).matrix().norm() < 1e-10);
 #endif
-        std::cout<<"done"<<std::endl;
+
         return Util::copy_with_inverse_permutation(result, m_target_octree->permutation());
     }
 
@@ -922,9 +924,10 @@ public:
 	transformedNodes.resize(DIM,ho_chebNodes.cols());
 
 
-
 	//evaluate the near field exactly
-	evaluateNearField(level,id,weights, result, tmp_result);	
+	evaluateNearField(level,id,weights, result, tmp_result);
+
+
                 
         //if we are at the leaf-level compute the interpolation data by actually interpolating the true function
         if(m_src_octree->isLeaf(level,id)) {                                
@@ -968,13 +971,12 @@ public:
 	//update the interpolation grid of the result
 
 
-
 	
         refinedData.grid = lo_grid;
         const auto& chebNodes=ChebychevInterpolation::chebnodesNdd<double,DIM>(order);
         refinedData.values.resize(lo_grid.activeCones().size()*chebNodes.cols(),DIMOUT);
 	for (size_t memId =0;memId<storage.grid.activeCones().size();memId++) {
-	    const size_t cid=ho_grid.activeCones()[memId];
+	    const size_t cid=storage.grid.activeCones()[memId];
 	    ConeRef hoCone({level,cid, memId,(size_t) id});
 	    
 	    coarseToFine(storage, level, hoCone, tmp_result, order, high_order,H,refinedData);
@@ -995,18 +997,29 @@ public:
 	evaluateFarField(level,id, weights, result, refinedData, tmp_result);
 
         //propagate the interpolation data to the parent
-        if( !m_src_octree->parentHasFarTargets(level,id)) //if we won't encounter any more far-fields we can stop
-            return;
-        
+	// if(level<=2) {
+	//     return;
+	// }
+
+
         size_t parentId = m_src_octree->parentId(level, id);
         BoundingBox parent_bbox = m_src_octree->bbox(level - 1, parentId);
         const auto parent_center = parent_bbox.center();
         double pH = parent_bbox.sideLength();
+
+	if (!m_src_octree->hasPoints(level-1, parentId)) {
+	    return;
+	}
+
+
+	if( ! m_src_octree->hasFarTargetsIncludingAncestors(level-1, parentId)){ //we dont need the interpolation info for those levels.
+	    return;
+	} 
+
         
         const auto p_order = parentData.order;
 	const auto& p_chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(p_order);
         
-
 
         const auto& pGrid=parentData.grid;
         if(!pGrid.isEmpty()) {
@@ -1035,6 +1048,7 @@ public:
 	    }
 
         }
+	std::cout<<"done"<<std::endl;
 
     }
 
@@ -1091,21 +1105,26 @@ public:
 	{
 	    size_t nb=1;
 	    const size_t el=elIds[perm[idx]];
-	    const size_t memId=data.grid.memId(el);
 	    
 	    //look if any of the following points are also in this element. that way we can process them together
 	    while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
 		nb++;
 	    }
-	    
-	    tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
 
-	    ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
-    	        tmp.array().block(1,idx, 2, nb),
-		chebNodes1d,
-		0, //axis that is of tensor product form
-		data.values.middleRows(memId*stride,stride),
-		tmp_data.middleRows(idx*target_order[0],nb*target_order[0]), data.order);
+	    if(el < SIZE_MAX) {
+		const size_t memId=data.grid.memId(el);
+
+		tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
+
+		ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
+		    tmp.array().block(1,idx, 2, nb),
+		    chebNodes1d,
+		    0, //axis that is of tensor product form
+		    data.values.middleRows(memId*stride,stride),
+		    tmp_data.middleRows(idx*target_order[0],nb*target_order[0]), data.order);
+	    }else{
+		tmp_data.middleRows(idx*target_order[0],nb*target_order[0]).fill(0.);
+	    }
 
 	    
 	    //ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
@@ -1164,7 +1183,6 @@ public:
             ex_point(0)=grid.region(coneRef.id()).center()[0]; //just use a placeholder value.
 
             const size_t el=data.grid.elementForPoint(ex_point);
-            const size_t memId=coneRef.memId();
 
 
             //look if any of the following points are also in this element. that way we can process them together
@@ -1178,13 +1196,20 @@ public:
 	    }
 
 
-	    transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,targets.middleCols(idx,nb));
-            ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
-    	        transformed.array().block(1,idx, 2, nb),
-		chebNodes1d,
-		0, //axis that is of tensor product form
-		data.values.middleRows(memId*stride,stride),
-		result.middleRows(idx*data.order[0],nb*data.order[0]), data.order);
+	    if(el<SIZE_MAX) {
+		const size_t memId=coneRef.memId();
+
+		transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,targets.middleCols(idx,nb));
+		ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
+								       transformed.array().block(1,idx, 2, nb),
+								       chebNodes1d,
+								       0, //axis that is of tensor product form
+								       data.values.middleRows(memId*stride,stride),
+								       result.middleRows(idx*data.order[0],nb*data.order[0]), data.order);
+	    }else{
+		tmp_data.middleRows(idx*target_order[0],nb*target_order[0]).fill(0.);
+	    }
+
 	    	    
             idx+=nb;
         }
@@ -1237,7 +1262,6 @@ public:
 	{
 	    size_t nb=1;
 	    const size_t el=elIds[perm[idx]];
-	    const size_t memId=data.grid.memId(el);
 	    
 	    //look if any of the following points are also in this element. that way we can process them together
 	    while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
@@ -1251,14 +1275,19 @@ public:
 	    res_tmp.fill(0);
 
 	    
-    
-	    ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
-    	        tmp.array().block(0,idx, 2, nb),
-		chebNodes1d,
-		2, //axis that is of tensor product form
-		data.values.middleRows(memId*stride,stride),
-		res_tmp, data.order);
+	    if(el<SIZE_MAX) {
+		const size_t memId=data.grid.memId(el);
 
+		ChebychevInterpolation::fast_evaluate_tp<T,DIM,DIMOUT>(
+		    tmp.array().block(0,idx, 2, nb),
+		    chebNodes1d,
+		    2, //axis that is of tensor product form
+		    data.values.middleRows(memId*stride,stride),
+		    res_tmp, data.order);
+
+	    }else{
+		res_tmp.fill(0);
+	    }
 
 
 	    for(size_t l=0;l<chebNodes1d.cols();l++) {
@@ -1483,7 +1512,7 @@ public:
 		//std::cout<<"\t box: "<<data.grid.domain()<<std::endl;
 
 		const size_t el=data.grid.elementForPoint(transformed.col(idx));
-		const size_t memId=data.grid.memId(el);
+
 
 		//transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
 		//look if any of the following points are also in this element. that way we can process them together
@@ -1491,9 +1520,16 @@ public:
 		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
 		    nb++;
 		}
-		//transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
-		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
-									 data.grid.region(el));
+
+		if(el==SIZE_MAX) { //cutoff values like that
+		    result.middleRows(idx,nb).fill(0);		    
+		 
+		}else{
+		    const size_t memId=data.grid.memId(el);
+		    //transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
+									     data.grid.region(el));
+		}
 		idx+=nb;
 	    }
 	}else{
@@ -1508,15 +1544,20 @@ public:
 	    {
 		size_t nb=1;
 		const size_t el=elIds[perm[idx]];
-		const size_t memId=data.grid.memId(el);
 
 		//look if any of the following points are also in this element. that way we can process them together
 		while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
 		    nb++;
 		}
 
-		tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
-		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
+		if(el==SIZE_MAX) { //cutoff values like that
+		    result.middleRows(idx,nb).fill(0);
+		}else{
+		    const size_t memId=data.grid.memId(el);
+
+		    tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
+		}
 		idx+=nb;
 	    }
 	    result=Util::copy_with_inverse_permutation(result,perm);
@@ -1538,6 +1579,12 @@ public:
 	transformCartToInterp(target, transformed, xc, H);
 	const size_t stride=data.computeStride();
 	const size_t el=data.grid.elementForPoint(transformed);
+	
+	if(el==SIZE_MAX) { //cutoff values like that
+	    result.fill(0);
+	    return;
+	}
+
 	const size_t memId=data.grid.memId(el);
 
 	transformed=data.grid.transformBackwards(el,transformed);
@@ -1589,7 +1636,6 @@ public:
 	    {
 		size_t nb=0;
 		const size_t el=nextElement;
-		const size_t memId=data.grid.memId(el);
 
 		//transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
 		//look if any of the following points are also in this element. that way we can process them together
@@ -1602,12 +1648,17 @@ public:
 		    }
 		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
 		}
-		transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
 
-		
 
-		//result.row(idx)=ChebychevInterpolation::evaluate_clenshaw<T, 1,DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride),  data.order);
-		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
+		if(el==SIZE_MAX) { //cutoff values like that
+		    result.middleRows(idx,nb).fill(0);
+		}else{
+		    const size_t memId=data.grid.memId(el);
+
+		    transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
+		    //result.row(idx)=ChebychevInterpolation::evaluate_clenshaw<T, 1,DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride),  data.order);
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
+		}
 		idx+=nb;
 	    }
 	    for (unsigned int j = 0; j < targets.cols(); j++) {
@@ -1627,15 +1678,20 @@ public:
 	    {
 		size_t nb=1;
 		const size_t el=elIds[perm[idx]];
-		const size_t memId=data.grid.memId(el);
 
 		//look if any of the following points are also in this element. that way we can process them together
 		while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
 		    nb++;
 		}
-		//tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
-		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
-									 data.grid.region(el));
+		if(el==SIZE_MAX) { //cutoff values like that
+		    result.middleRows(idx,nb).fill(0);
+		}else{
+		    const size_t memId=data.grid.memId(el);
+
+		    //tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
+									     data.grid.region(el));
+		}
 		idx+=nb;
 	    }
 
@@ -1692,7 +1748,16 @@ public:
 	 }*/
     }
 
-    
+
+    inline  double  cutoff_limit(double H) const
+    {
+	return 1e-4;
+    }
+
+
+    inline double tolerance() const {
+	return m_tolerance;
+    }
 
 protected:
     void onOctreeReady()
@@ -1706,7 +1771,7 @@ private:
     unsigned int m_numTargets;
     unsigned int m_numSrcs;
     Eigen::Vector<size_t, DIM> m_base_n_elements;
-    size_t m_baseOrder;
+    Eigen::Vector<int, DIM> m_baseOrder;
     double m_tolerance;
 #ifdef  CHECK_CONNECTIVITY
     tbb::queuing_mutex m_conMutex;

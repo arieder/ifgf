@@ -147,37 +147,52 @@ public:
     }
 
 
-    inline Eigen::Vector<int,dim> orderForBox(double H, unsigned int baseOrder,int step=0) const
+        
+    inline Eigen::Vector<int,dim> orderForBox(double H, Eigen::Vector<int,dim> baseOrder,int step=0) const
     {
 	
-	Eigen::Vector<int,dim> order;
+	Eigen::Vector<int,dim> order=baseOrder;
 
-	order.fill(baseOrder);
-	order[0]=std::max((int) baseOrder-2,1);
+	//order[2]=std::round(order[2]*1.5);
+	// order.fill(baseOrder);
+	// order[0]=std::max((int) baseOrder-3,1);
+	// order[1]=baseOrder;
+	// order[2]=std::round(baseOrder*1.5);
 
 	if(step==0) {
-	    order.array()-=2;
+	    order=baseOrder.array()-3;//(baseOrder.array().template cast<double>()*Eigen::log(4./baseOrder.array().template cast<double>())).template cast<int>();
+		//std::cout<<"order="<<order.transpose()<<std::endl;
+	    //order[0]-=2;
+	    //order[2]=std::round(baseOrder[2]/1.3);
+	    //order[2]=baseOrder;
+	    
+	    //order.array()-=2;
+	    //order.array()-=2;
 	}
 	
         return order;
     }
 
-    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, unsigned int baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
+    inline  Eigen::Vector<size_t,dim>  elementsForBox(double H, Eigen::Vector<int,dim> baseOrder,Eigen::Vector<size_t,dim> base, int step=0) const
     {
 	const auto orders=orderForBox(H,baseOrder,step);
 	Eigen::Vector<size_t,dim> els;
-	if(step==0) {
+
+	if(step==0){
 	    base*=3;
+	    //base[2]*=2;
 	}
 	    
 	for(int i=0;i<dim;i++) {
-	    double delta=std::max( k.real()*H/(4+k.imag()) , 1.0); //make sure that k H is bounded
-	    els[i]=base[i]*((int) ceil(delta));	    
+	    //int delta=std::ceil(std::max( std::abs(k.imag())*H/(2*(2+k.real())) , 1.0)); //make sure that k H is bounded
+	    double delta=std::max( std::abs(k.imag())*H/4., 1.0)*exp(-0.2*(dim/sqrt(dim))*H*k.real());
+	    
+
+	    els[i]=std::max(base[i]*((int) ceil(delta)),(size_t) 1);	    
 	}
 	    
 	return els;	    
     }
-
 
     
     

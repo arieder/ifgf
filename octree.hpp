@@ -267,8 +267,8 @@ public:
 	m_depth=m_levels;
 
 
-        std::cout << "building the nodes up to level"<<m_depth << std::endl;        	
-	//m_root->print();
+        std::cout << "building the nodes up to level"<<m_depth << std::endl;
+  
 
 	
     }
@@ -282,14 +282,19 @@ public:
 
 	for( auto far : src->farTargets()) {
 	    std::cout<<far.first<<" "<<far.second<<std::endl;
-	}
-
+	}	
 		    
     }
 
     void buildInteractionList(const Octree&  target_tree)
     {
 	buildInteractionList(m_root,target_tree.m_root);
+
+	printInteractionList(m_root);
+	for(int i=0;i<N_Children;i++){
+	    printInteractionList(m_root->child(i));
+	}
+
     }
 
     void buildInteractionList(std::shared_ptr<OctreeNode>  src,std::shared_ptr<const OctreeNode>  target)
@@ -346,7 +351,10 @@ public:
 	target->print();
     }
 
-    void calculateInterpolationRange(  std::function<Eigen::Vector<int,DIM>(double,int)> order_for_H,std::function<Eigen::Vector<size_t,DIM>(double,int )> N_for_H, const Octree& target)
+    void calculateInterpolationRange(  std::function<Eigen::Vector<int,DIM>(double,int)> order_for_H,
+				       std::function<Eigen::Vector<size_t,DIM>(double,int )> N_for_H,
+				       std::function<double(double)> smin_for_H,
+				       const Octree& target)
     {
 	BoundingBox<DIM> global_box;
 	//global_box.min().fill(10);
@@ -480,13 +488,16 @@ public:
 
 		
                 const double dist_t=0;//target.bbox(0,0).exteriorDistance(xc);
-		double smin=0.5*H/m_diameter;///(dist_t+target.m_diameter+m_diameter);
+		double smin= smin_for_H(H);
+
+		/*
                 if(!pBox.isNull()) {
 		    //std::cout<<"diam:"<<m_diameter<<" "<<pBox.min()[0]<<std::endl;
                     smin=std::min(smin,0.75/(sqrt(DIM)/3.0+2.0/pBox.min()[0]));
 		    //smin=std::min(smin, pBox.min()[0]/2.0);
 		}
 		smin=1e-3;
+		*/
                 //1e-3;//H/(m_diameter+dist+target.m_diameter);
 
 		
@@ -548,8 +559,10 @@ public:
 			//const auto s=Util::cartToInterp<DIM>(target_points.col(i),xc,H);			  
 			auto coneId=domain.elementForPoint(s.col(i));
 			auto coneId2=coarseDomain.elementForPoint(s.col(i));
-			is_cone_active[1].insert(coneId2);
-			is_cone_active[0].insert(coneId);
+			if(coneId2<SIZE_MAX)
+			    is_cone_active[1].insert(coneId2);
+			if(coneId<SIZE_MAX)
+			    is_cone_active[0].insert(coneId);
 		    }
 		}
 
@@ -561,78 +574,87 @@ public:
 		    const double pH=parent->boundingBox().sideLength();
 
 		    const ConeDomain<DIM>& p_grid=parent->coneDomain(1);
-		    
-		    
-		    if(mode==Decomposition){			
-			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(H,1));
 
-			//now we add all the points used in the point-and-shoot method. Second rotation:
-			for(size_t el : p_grid.activeCones() ) {
-			    const auto direction=xc-pxc;
+		    if(parentHasFarTargets(level,n))
+		    {		    
+			if(mode==Decomposition){			
+			    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(H,1));
 
-			    auto points=p_grid.rotated_points(el,chebNodes,direction, false);
+			    //now we add all the points used in the point-and-shoot method. Second rotation:
+			    for(size_t el : p_grid.activeCones() ) {
+				const auto direction=xc-pxc;
 
-			    for (size_t i=0;i<points.cols();i++) {
-				auto coneId=trans_domain.elementForPoint(points.col(i));
-				is_cone_active[3].insert(coneId);
+				auto points=p_grid.rotated_points(el,chebNodes,direction, false);
+
+				for (size_t i=0;i<points.cols();i++) {
+				    auto coneId=trans_domain.elementForPoint(points.col(i));
+				    if(coneId<SIZE_MAX)
+					is_cone_active[3].insert(coneId);
+				}
+			    }
+
+
+			    //translation
+			    for(size_t el : is_cone_active[3] ) {	    	    
+				auto points=trans_domain.translated_points(el,chebNodes,xc,H,pxc,pH);
+
+				for (size_t i=0;i<points.cols();i++) {
+				    auto coneId=coarseDomain.elementForPoint(points.col(i));
+				    if(coneId<SIZE_MAX)
+					is_cone_active[2].insert(coneId);
+				}			
+			    }
+
+
+			    //first rotation
+			    for(size_t el : is_cone_active[2] ) {	    	    
+				const auto direction=xc-pxc;
+				PointArray points=coarseDomain.rotated_points(el,chebNodes,direction, true);
+
+				for (size_t i=0;i<points.cols();i++) {
+				    auto coneId=domain.elementForPoint(points.col(i));
+				    auto coneId2=coarseDomain.elementForPoint(points.col(i));
+				    if(coneId2<SIZE_MAX)
+					is_cone_active[1].insert(coneId2);
+				    if(coneId<SIZE_MAX)
+					is_cone_active[0].insert(coneId);
+				}			    
 			    }
 			}
+			else if(mode==TwoGrid) {
+			    //We use a coarse grid with high order and a fine grid of lower order
+			    auto HoChebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,1));			
+			    const ConeDomain<DIM>& p_hoGrid=parent->coneDomain(1);
+			    //
 
-
-			//translation
-			for(size_t el : is_cone_active[3] ) {	    	    
-			    auto points=trans_domain.translated_points(el,chebNodes,xc,H,pxc,pH);
-
-			    for (size_t i=0;i<points.cols();i++) {
-				auto coneId=coarseDomain.elementForPoint(points.col(i));
-				is_cone_active[2].insert(coneId);
+			    PointArray pnts(DIM,HoChebNodes.cols());
+			    PointArray interp_pnts(DIM,HoChebNodes.cols());
+			    for(size_t el : p_hoGrid.activeCones() ) {
+				pnts=Util::interpToCart<DIM>(p_hoGrid.transform(el,HoChebNodes).array(),pxc,pH);
+				Util::cartToInterp2<DIM>(pnts.array(),xc,H,interp_pnts.array());
+				for (size_t i=0;i<HoChebNodes.cols();i++) {
+				    auto coneId=domain.elementForPoint(interp_pnts.col(i));
+				    auto coneId2=coarseDomain.elementForPoint(interp_pnts.col(i));
+				    if(coneId2<SIZE_MAX)
+					is_cone_active[1].insert(coneId2);
+				    if(coneId<SIZE_MAX)
+					is_cone_active[0].insert(coneId);
+				}
 			    }			
+
 			}
+			else   {
+			    //now we add all the points used in the regular method
+			    auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
+			    for(size_t el : p_grid.activeCones() ) {	    
+				for (size_t i=0;i<chebNodes.cols();i++) {
+				    Point cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
+				    Point interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
 
-
-			//first rotation
-			for(size_t el : is_cone_active[2] ) {	    	    
-			    const auto direction=xc-pxc;
-			    PointArray points=coarseDomain.rotated_points(el,chebNodes,direction, true);
-
-			    for (size_t i=0;i<points.cols();i++) {
-				auto coneId=domain.elementForPoint(points.col(i));
-				auto coneId2=coarseDomain.elementForPoint(points.col(i));				
-				is_cone_active[1].insert(coneId2);
-				is_cone_active[0].insert(coneId);
-			    }			    
-			}
-		    }
-		    else if(mode==TwoGrid) {
-			//We use a coarse grid with high order and a fine grid of lower order
-			auto HoChebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,1));			
-			const ConeDomain<DIM>& p_hoGrid=parent->coneDomain(1);
-			//
-
-			PointArray pnts(DIM,HoChebNodes.cols());
-			PointArray interp_pnts(DIM,HoChebNodes.cols());
-			for(size_t el : p_hoGrid.activeCones() ) {
-			    pnts=Util::interpToCart<DIM>(p_hoGrid.transform(el,HoChebNodes).array(),pxc,pH);
-			    Util::cartToInterp2<DIM>(pnts.array(),xc,H,interp_pnts.array());
-			    for (size_t i=0;i<HoChebNodes.cols();i++) {
-				auto coneId=domain.elementForPoint(interp_pnts.col(i));
-				auto coneId2=coarseDomain.elementForPoint(interp_pnts.col(i));				
-				is_cone_active[1].insert(coneId2);
-				is_cone_active[0].insert(coneId);
-			    }
-			}			
-
-		    }
-		    else   {
-			//now we add all the points used in the regular method
-			auto chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order_for_H(pH,0));
-			for(size_t el : p_grid.activeCones() ) {	    
-			    for (size_t i=0;i<chebNodes.cols();i++) {
-				Point cart_pnt=Util::interpToCart<DIM>(p_grid.transform(el,chebNodes.col(i)).array(),pxc,pH);
-				Point interp_pnt=Util::cartToInterp<DIM>(cart_pnt,xc,H);
-
-				auto coneId=domain.elementForPoint(interp_pnt);
-				is_cone_active[0].insert(coneId);
+				    auto coneId=domain.elementForPoint(interp_pnt);
+				    if(coneId<SIZE_MAX)
+					is_cone_active[0].insert(coneId);
+				}
 			    }
 			}
 		    }
@@ -839,7 +861,7 @@ public:
     bool hasFarTargetsIncludingAncestors(unsigned int level, size_t i) const
     {
 	const std::shared_ptr<const OctreeNode>& node = m_nodes[level][i];
-	if(node) {	    
+	if(node) {
 	    return node->farTargets().size()>0 ||parentHasFarTargets(node);
 	}
 	return false;
@@ -847,7 +869,7 @@ public:
 
     bool parentHasFarTargets(const std::shared_ptr<const OctreeNode>& node) const
     {
-	const std::shared_ptr<const OctreeNode>& parent = node->parent().lock();
+	const std::shared_ptr<const OctreeNode>& parent = node->parent().lock();	
 	if(parent) {
 	    return parent->farTargets().size()>0 || parentHasFarTargets(parent);
 	}else{
