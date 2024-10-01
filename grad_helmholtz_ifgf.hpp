@@ -100,7 +100,7 @@ public:
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> d2=(x.matrix().colwise()-xc).colwise().squaredNorm().array();
 	const Eigen::Array<typename TX::Scalar, TX::ColsAtCompileTime, 1> dp2=(x.matrix().colwise()-pxc).colwise().squaredNorm().array();
 
-	const auto invd=Eigen::rsqrt(d2);
+	const auto invd=(d2 > 1e-12).select(Eigen::rsqrt(d2),d2.Zero(d2.rows(),d2.cols()));
 
 	const auto dp=Eigen::sqrt(dp2);
 	const auto d=d2*invd;
@@ -260,7 +260,11 @@ public:
 
     inline  double  cutoff_limit(double H) const
     {
-	return  std::max(1e-3,std::abs(k.real())*H/abs(log(0.5*this->tolerance())));
+	if(this->tolerance()>0) {
+	    return  std::max(1e-3,std::abs(k.real())*H/abs(log(0.5*this->tolerance())));
+	}else {
+	    return  1e-4;
+	}
     }
 
    

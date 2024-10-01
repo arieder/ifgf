@@ -290,10 +290,10 @@ public:
     {
 	buildInteractionList(m_root,target_tree.m_root);
 
-	printInteractionList(m_root);
+	/*printInteractionList(m_root);
 	for(int i=0;i<N_Children;i++){
 	    printInteractionList(m_root->child(i));
-	}
+	    }*/
 
     }
 

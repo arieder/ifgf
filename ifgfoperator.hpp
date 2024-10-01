@@ -285,10 +285,10 @@ public:
 	    BoundingBox bbox = m_src_octree->bbox(level - 1, pId);
 	    double H = bbox.sideLength();
 	    order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder,1);	    
-	    auto grid= m_src_octree->coneDomain(level-1,pId);		
+	    auto grid= m_src_octree->coneDomain(level-1,pId,1);		
 	    interpolationData[pId].grid = grid;
 	    interpolationData[pId].values.resize(grid.activeCones().size()*order.prod(),DIMOUT);            
-	    //interpolationData[pId].values.fill(0);
+	    interpolationData[pId].values.fill(0);
 	    interpolationData[pId].order = order;                        
         }
 
@@ -350,9 +350,9 @@ public:
 
 
 	    //there is no more far field or interpolation happening
-	    if(level<1) {
+	    /*if(level<1) {
 		break;
-	    }
+		}*/
 
 
 
@@ -536,6 +536,8 @@ public:
 
 	    std::cout<<"propagating"<<std::endl;
 
+	    if(level<1) //there is no parent 
+		break;
             //Now transform the interpolation data to the parents
 	    std::cout<<"propagating upward"<<std::endl;
 	    initInterpolationData(level-1,1, parentInterpolationData);
@@ -618,7 +620,7 @@ public:
 			    continue;
 			}
 			
-			if(level<2 || ! m_src_octree->parentHasFarTargets(level, cone.boxId())){ //we dont need the interpolation info for those levels.
+			if( ! m_src_octree->parentHasFarTargets(level, cone.boxId())){ //we dont need the interpolation info for those levels.
 			    continue;
 			}
 
@@ -658,7 +660,7 @@ public:
 			    continue;
 			}
 			
-			if(level<2 || ! m_src_octree->parentHasFarTargets(level,cone.boxId())){ //we dont need the interpolation info for those levels.
+			if( ! m_src_octree->parentHasFarTargets(level,cone.boxId())){ //we dont need the interpolation info for those levels.
 			    continue;
 			}
 
@@ -693,7 +695,7 @@ public:
 			   continue;
 		   }
 
-		    if(level<2 || ! m_src_octree->hasFarTargetsIncludingAncestors(level-1, parentId)){ //we dont need the interpolation info for those levels.
+		    if( ! m_src_octree->hasFarTargetsIncludingAncestors(level-1, parentId)){ //we dont need the interpolation info for those levels.
 		    	continue;
 		    } 
 
@@ -738,6 +740,7 @@ public:
 
     void initInterpolationData(size_t level, size_t step, std::vector<ChebychevInterpolation::InterpolationData<T,DIM,DIMOUT> >& i_data)
     {
+	assert(level<m_src_octree->levels());
 	i_data.resize(m_src_octree->numBoxes(level));
 	tbb::parallel_for(
                 tbb::blocked_range<size_t>(0, i_data.size()),
@@ -1025,7 +1028,7 @@ public:
         if(!pGrid.isEmpty()) {
 	    transformedNodes.resize(DIM,p_chebNodes.cols()*pGrid.activeCones().size());
 	    tmp_result.resize(transformedNodes.cols(),DIMOUT);	    
-	    tmp_result.fill(0);
+	    //tmp_result.fill(0);
 
 	    
 	    size_t idx=0;
@@ -1040,15 +1043,17 @@ public:
 	    transferInterp(refinedData, transformedNodes, center, H, parent_center, pH,
 			   tmp_result);
 
+	    //std::cout<<"level="<<level<<std::endl;
 	    idx=0;
 	    for (int memId =0;memId<pGrid.activeCones().size();memId++) {
-                const size_t el=pGrid.activeCones()[memId];               
+                const size_t el=pGrid.activeCones()[memId];
+		
                 parentData.values.middleRows(memId*stride,stride)+=tmp_result.middleRows(idx,stride);
 		idx+=stride;
 	    }
 
         }
-	std::cout<<"done"<<std::endl;
+	//std::cout<<"done"<<std::endl;
 
     }
 

@@ -18,12 +18,12 @@ public:
         Eigen::AlignedBox<double, DIM>(min, max)
     {
 
-	m_center=(this->max() + this->min())/2.0;
+	m_center=(max + min)/2.0;
 
 	auto diag = this->diagonal();
         double m = 0;
         for (unsigned int i = 0; i < DIM; i++) {
-            m = std::max(m, diag[i]);
+            m = std::max(m, std::abs(diag[i]));
         }
         m_sideLength=m;
 	
