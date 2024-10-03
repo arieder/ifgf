@@ -1,6 +1,7 @@
 #ifndef _OCTREE_HPP_
 #define _OCTREE_HPP_
 
+#include "Eigen/src/Core/VectorBlock.h"
 #include "config.hpp"
 
 #include <Eigen/Dense>
@@ -40,6 +41,11 @@ public:
     enum TransformationMode { Decomposition, TwoGrid , Regular};
     typedef Eigen::Array<double, DIM, Eigen::Dynamic> PointArray;
     typedef Eigen::Vector<double, DIM> Point;
+
+    struct FarFieldInfo {
+	Eigen::Vector<size_t, Eigen::Dynamic> indices;
+	Eigen::Vector<size_t, Eigen::Dynamic> starts;
+    };
 
     class OctreeNode
     {
@@ -356,6 +362,9 @@ public:
 				       std::function<double(double)> smin_for_H,
 				       const Octree& target)
     {
+
+	m_farFieldBoxes.resize(levels());
+	
 	BoundingBox<DIM> global_box;
 	//global_box.min().fill(10);
 	//global_box.max().fill(0);
@@ -744,30 +753,65 @@ public:
 
 	    if(level< min_recursive_level) {
 		//compute the farFieldBoxes
-		std::vector<std::vector<size_t> > ffB;
-		ffB.reserve(target.points().size());
-		for(size_t l=0;l<target.points().size();l++){		
-		    ffB.push_back(std::vector<size_t>());
-		}
 
-		tbb::parallel_for(tbb::blocked_range<size_t>(0,numBoxes(level)), [&](tbb::blocked_range<size_t> r) {
-		    for(size_t n=r.begin();n<r.end();++n) {
+		//we start out by computing how much storage we might need
+		size_t cnt=0;
+		Eigen::Vector<size_t, Eigen::Dynamic> nBoxPerTarget(target.points().size());
+		nBoxPerTarget.fill(0);
+
+		for(size_t n=0;n<numBoxes(level);++n) {
+		    std::shared_ptr<OctreeNode> node=m_nodes[level][n];
+		    const std::vector<IndexRange> farTargets=node->farTargets();		    
+		    for( const auto tRange : farTargets) {
+			cnt+=tRange.second-tRange.first;
+			for(size_t trg=tRange.first;trg<tRange.second;++trg) {
+			    nBoxPerTarget[trg]++;
+			}
+		    }
+		}
+		if(cnt>0)
+		{
+		    //now we populate
+		    FarFieldInfo info;
+		    info.indices.resize(cnt);
+		    info.starts.resize(target.points().size()+1);
+
+		    //now fill the starts vector
+		    info.starts[0]=0;
+		    for(size_t trg=1;trg<info.starts.size();trg++) {
+			info.starts[trg]=info.starts[trg-1]+nBoxPerTarget[trg-1];
+
+		    }
+
+		    assert(info.starts[target.points().size()]==cnt);
+
+		    nBoxPerTarget.fill(0);
+		    	    
+		    for(size_t n=0;n<numBoxes(level);++n) {		
 			std::shared_ptr<OctreeNode> node=m_nodes[level][n];
 			const std::vector<IndexRange> farTargets=node->farTargets();
-			for( const auto tRange : farTargets) {
+			for( const auto tRange : farTargets) {		
 			    for(size_t trg=tRange.first;trg<tRange.second;++trg) {
-				tbb::spin_mutex::scoped_lock lock(target_mutexes[trg]);
-				ffB[trg].push_back(n);
+				info.indices[info.starts[trg]+nBoxPerTarget[trg]]=n;
+				nBoxPerTarget[trg]++;
 			    }
 			}
 		    }
-		});
-		m_farFieldBoxes.push_back(ffB);
-	    }else {       	
-		m_farFieldBoxes.push_back(std::vector<std::vector<size_t> >());
+
+
+
+		    m_farFieldBoxes[level]=info;
+		}else{
+		    FarFieldInfo info;
+		    info.indices.resize(0);
+		    info.starts.resize(target.points().size()+1);
+		    info.starts.fill(0);
+
+		    m_farFieldBoxes[level]=info;
+		    
+		}
 	    }
 
-	    assert(m_farFieldBoxes.size()==level+1);
 
 	}
 
@@ -962,8 +1006,16 @@ public:
     }
 
 
-    const std::vector<size_t>& farfieldBoxes(size_t level, size_t targetPoint) const {
-	return  m_farFieldBoxes[level][targetPoint];
+    const auto farfieldBoxes(size_t level, size_t targetPoint) const {
+	const auto& ffB=m_farFieldBoxes[level];
+
+	//	assert(targetPoint+1<ffB.starts.size());
+	const size_t start=ffB.starts[targetPoint];
+	const size_t end=ffB.starts[targetPoint+1];
+
+
+	
+	return ffB.indices.segment(start, end-start);
     }
 
     size_t numPoints() const {
@@ -1104,7 +1156,7 @@ private:
     std::vector<std::vector<std::shared_ptr<OctreeNode> > > m_nodes;
     std::vector<std::array<std::vector<ConeRef>,N_STEPS> > m_activeCones;
     std::vector<std::vector<ConeRef> > m_leafCones;
-    std::vector<std::vector<std::vector<size_t> > > m_farFieldBoxes;  // on each level: for each target point y store the source boxes such that y is in the farfield 
+    std::vector< FarFieldInfo > m_farFieldBoxes;  // on each level: for each target point y store the source boxes such that y is in the farfield 
     std::vector<unsigned int> m_numBoxes;
     unsigned int m_levels;
 
