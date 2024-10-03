@@ -92,8 +92,9 @@ public:
 	}
     }
 
+    template<int TARGETS_AT_COMPILE_TIME>
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
-                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result,IndexRange srcsIds) const
+                        Eigen::Ref<Eigen::Array<T, TARGETS_AT_COMPILE_TIME,1> >  result,IndexRange srcsIds) const
     {
         assert(result.size() == y.cols());
         assert(w.size() == x.cols());
@@ -106,12 +107,12 @@ public:
         }
     }
 
-    Eigen::Vector<T, Eigen::Dynamic>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
-            const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
-							     const Point& xc, double H, IndexRange srcsIds) const
+    Eigen::Array<T, Eigen::Dynamic,1>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
+							      const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
+							      const Point& xc, double H, IndexRange srcsIds) const
     {
 
-        Eigen::Vector<T, Eigen::Dynamic> result(y.cols());
+        Eigen::Array<T, Eigen::Dynamic,1> result(y.cols());
 
         result.fill(0);        
 	for (int j = 0; j < y.cols(); j++) {

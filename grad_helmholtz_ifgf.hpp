@@ -124,8 +124,9 @@ public:
     }
 
 
+    template<int TARGETS_AT_COMPILE_TIME>
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
-                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result,IndexRange srcIds) const
+                        Eigen::Ref<Eigen::Vector<T,  TARGETS_AT_COMPILE_TIME> >  result,IndexRange srcIds) const
     {
         assert(result.size() == y.cols());
         assert(w.size() == x.cols());

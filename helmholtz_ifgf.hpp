@@ -95,15 +95,17 @@ public:
 	}
     }
 
+    template<int TARGETS_AT_COMPILE_TIME>
     void evaluateKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y, const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &w,
-                        Eigen::Ref<Eigen::Vector<T, Eigen::Dynamic> >  result,IndexRange srcsIds) const
+                        Eigen::Ref<Eigen::Vector<T, TARGETS_AT_COMPILE_TIME> >  result,IndexRange srcsIds) const
     {
         assert(result.size() == y.cols());
         assert(w.size() == x.cols());
 
-        for (int i = 0; i < x.cols(); i++) {
-	    //result+= w[i]* kernelFunction((- y).colwise()+x.col(i)).matrix();
-            for (int j = 0; j < y.cols(); j++) {
+	
+	for (int j = 0; j < y.cols(); j++) {
+	    for (int i = 0; i < x.cols(); i++) {
+	    //result+= w[i]* kernelFunction((- y).colwise()+x.col(i)).matrix();        
                 result[j] += w[i] * kernelFunction(x.col(i) - y.col(j));
 	    }
         }

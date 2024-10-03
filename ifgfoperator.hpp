@@ -341,7 +341,7 @@ public:
 #endif
 
 
-		      static_cast<Derived *>(this)->evaluateKernel(
+		      static_cast<Derived *>(this)->template evaluateKernel<1>(
 								   m_src_octree->points(srcs),
 								   m_target_octree->point(i),
 								   new_weights.segment(srcs.first, nS),
@@ -830,7 +830,7 @@ public:
 	    tmp_result.resize(nT,DIMOUT);
 	    tmp_result.fill(0);
 
-	    static_cast<Derived *>(this)->evaluateKernel(
+	    static_cast<Derived *>(this)->template evaluateKernel<-1>(
 							 m_src_octree->points(srcs),
 							 m_target_octree->points(targets),
 							 weights.segment(srcs.first, nS),
