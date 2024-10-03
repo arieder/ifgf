@@ -106,7 +106,7 @@ public:
 	//use n boxes randomly to estimate the interpolation error
 	const size_t level=m_src_octree->levels()-1;
 	const size_t Nboxes= m_src_octree->numBoxes(level);
-	const size_t sampleBoxes=20;
+	const size_t sampleBoxes=10;
 	const size_t stride= Nboxes/sampleBoxes;
 
 	std::cout<<"working on level"<<level<<" "<<m_src_octree->numBoxes(level)<<std::endl;
@@ -124,7 +124,7 @@ public:
 					    return tmp;
 					},[](const Eigen::Vector<size_t, DIM>&  a, const Eigen::Vector<size_t, DIM>& b) -> Eigen::Vector<size_t,DIM> {return  a.cwiseMax(b);});
 
-	std::cout<<"using refinemnt="<<ref<<std::endl;;
+	std::cout<<"using refinemnt="<<ref.transpose()<<std::endl;;
 	return ref;
     }
 
@@ -178,7 +178,7 @@ public:
 	    new_n_els=refine==RefineH ?  m_base_n_elements.array()*Eigen::pow(2*Eigen::Vector<size_t, DIM>::Ones().array(),base.array()) : m_base_n_elements;
 	    
 
-	    const int layers=5;
+	    const int layers=3;
 	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p.array()+layers+1,1 );
 
 	    //std::cout<<"trying order"<<order<<std::endl;
@@ -202,7 +202,6 @@ public:
 	    ChebychevInterpolation::chebtransform<T,DIM>(data,trafo_data,order);
 	    for(int d=0;d<DIM;d++) {
 		const double e=Util::compute_slice_norm<T,DIM,DIMOUT>(trafo_data,order.template cast<size_t>(), d,layers);
-		//std::cout<<"d="<<d<<" e="<<e<<std::endl;;
 		error[d]=std::max(error[d],e);
 	    }
 		
@@ -212,7 +211,7 @@ public:
 		    base[d]+=1;
 		}
 	    }
-	    std::cout<<"error="<<error<<std::endl;
+	    //std::cout<<"error="<<error<<std::endl;
 	}
 	
 	return refine == RefineH ? new_n_els : new_p.template cast<size_t>();
