@@ -109,6 +109,8 @@ public:
         }
     }
 
+
+
     Eigen::Vector<T, Eigen::Dynamic>  evaluateFactoredKernel(const Eigen::Ref<const PointArray> &x, const Eigen::Ref<const PointArray> &y,
             const Eigen::Ref<const Eigen::Vector<T, Eigen::Dynamic> > &weights,
 							     const Point& xc, double H, IndexRange srcsIds) const

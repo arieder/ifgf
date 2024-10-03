@@ -313,26 +313,47 @@ public:
 	level--;
         std::cout<<"now proceeding iteratively"<<level<<std::endl;
 #endif
-	tbb::queuing_mutex resultMutex;
 		
         for (; level >= 0; --level) {
             std::cout << "level=" << level << " "<< m_src_octree->numBoxes(level)<< std::endl;
 	    
 
-            std::cout << "near field" <<std::endl;
-	    
-	    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numBoxes(level)),
-	    [&](tbb::blocked_range<size_t> r) {
-		for (size_t i = r.begin(); i < r.end(); i++) {
-		    if(!m_src_octree->hasPoints(level,i))
-			continue;
-		    BoundingBox bbox = m_src_octree->bbox(level, i);
-		    auto center = bbox.center();
-		    double H = bbox.sideLength();
-		    evaluateNearField(level,i, new_weights, result, tmp_result.local(),&resultMutex);
-	    }});
+	    std::cout << "near field" <<std::endl;
+
+	    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_target_octree->numPoints()),
+	      [&](tbb::blocked_range<size_t> r) {
+              for (size_t i = r.begin(); i < r.end(); i++) {
+		  for( size_t boxId : m_src_octree->nearFieldBoxes(level,i) ){			  
+		      IndexRange srcs = m_src_octree->points(level, boxId);
+		      const size_t nS = srcs.second - srcs.first;
+		      if(nS==0) { //skip empty boxes
+			  continue;
+		      }
+
+#ifdef CHECK_CONNECTIVITY
+		      {
+			  tbb::queuing_mutex::scoped_lock lock(m_conMutex);
+			  int q=i;
+			  for (int k = srcs.first; k < srcs.second; k++) {			      
+			      m_connectivity(k, q) += 1;
+			  }
+		      }			    
+#endif
 
 
+		      static_cast<Derived *>(this)->evaluateKernel(
+								   m_src_octree->points(srcs),
+								   m_target_octree->point(i),
+								   new_weights.segment(srcs.first, nS),
+								   result.row(i),
+								   srcs);
+
+
+		      
+		  }
+	      }});
+
+	   
 
 	    //Get an exemplary bbox to determine the interpolation order
 	    BoundingBox bbox = m_src_octree->bbox(level, 0);
@@ -785,13 +806,6 @@ public:
 	if(nS==0) //skip empty boxes
 	    return;
 
-	BoundingBox bbox = m_src_octree->bbox(level, id);
-	auto center = bbox.center();
-	double H = bbox.sideLength();
-
-	const auto order = static_cast<Derived *>(this)->orderForBox(H, m_baseOrder);
-	const auto& chebNodes = ChebychevInterpolation::chebnodesNdd<double, DIM>(order);
-	
 	std::vector<IndexRange> targetList = m_src_octree->nearTargets(level, id);
 
 	for (const auto &targets : targetList) {
