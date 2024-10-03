@@ -261,7 +261,7 @@ public:
     inline  double  cutoff_limit(double H) const
     {
 	if(this->tolerance()>0) {
-	    return  std::max(1e-3,std::abs(k.real())*H/abs(log(0.5*this->tolerance())));
+	    return  std::max(1e-4,std::abs(k.real())*H/abs(log(this->tolerance())));
 	}else {
 	    return  1e-4;
 	}

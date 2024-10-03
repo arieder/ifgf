@@ -160,7 +160,7 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
     }
 
     template<int DIM>
-    inline Eigen::Vector<size_t,DIM> indicesFromId(size_t j, const Eigen::Vector<size_t,DIM> &ns)  {
+    inline Eigen::Vector<size_t,DIM> indicesFromId(size_t j, const Eigen::Ref<const Eigen::Vector<size_t,DIM> > &ns)  {
 	Eigen::Vector<size_t,DIM> indices;	
 	for(int i=0;i<DIM;i++) {
 	    const size_t idx=j % ns[i];
@@ -173,24 +173,37 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
     }
 
 
+    template<int DIM>
+    inline size_t indicesToId(const Eigen::Ref<const Eigen::Vector<size_t,DIM> >& idcs, const Eigen::Ref<const Eigen::Vector<size_t,DIM> > &ns)  {
+	size_t id=0;
+	size_t stride=1;
+	for(int i=0;i<DIM;i++) {
+	    id+=idcs[i]*stride;
+	    stride*=ns[i];
+	}
+
+	return id;
+    }
+
+
 
     template <typename T,int DIM,int DIMOUT>
-    double compute_slice_norm(const Eigen::Ref<const Eigen::Array<T,Eigen::Dynamic, DIMOUT> >& data, const Eigen::Vector<size_t, DIM>& ns,int axis)
+    double compute_slice_norm(const Eigen::Ref<const Eigen::Array<T,Eigen::Dynamic, DIMOUT> >& data, const Eigen::Vector<size_t, DIM>& ns,int axis, int layers=1)
     {
 	double v1=0;
 	double v2=0;
 	
 	for(size_t idx=0;idx<data.rows();idx++) {
-	    Eigen::Vector<size_t,DIM> split=indicesFromId(idx,ns);
+	    Eigen::Vector<size_t,DIM> split=indicesFromId<DIM>(idx,ns);
 	    double n=data.row(idx).matrix().squaredNorm();
 	    
-	    v1=std::max(n,v1);
-	    if(split[axis]==ns[axis]-1) {
-		v2=std::max(n,v2);
+	    v1+=n;
+	    if(split[axis]==ns[axis]-layers) {
+		v2+=n;
 	    }
 	}
 
-	return sqrt(v2);//sqrt(v2)/std::max(1.,sqrt(v1));
+	return sqrt(v2)/std::max(1.,sqrt(v1));
     }
 
 

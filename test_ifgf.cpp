@@ -67,7 +67,7 @@ int main()
     //auto global_control = tbb::global_control( tbb::global_control::max_allowed_parallelism,      1);
     //oneapi::tbb::task_arena arena(1);
 
-    HelmholtzIfgfOperator<dim> op(-kappa.imag(),10,3,1,1e-5); //3
+    HelmholtzIfgfOperator<dim> op(-kappa.imag(),10,10,1,-1); //3
     //GradHelmholtzIfgfOperator<dim> op(kappa,10,3,1,1e-5); //3
     //op.setDx(-1);
 

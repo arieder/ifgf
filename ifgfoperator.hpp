@@ -165,7 +165,7 @@ public:
 	error.fill(std::numeric_limits<double>::max());
 
 
-        Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Random(nS);
+        Eigen::Vector<T,Eigen::Dynamic> weights=Eigen::Vector<T,Eigen::Dynamic>::Ones(nS);
 
 	
 	Eigen::Vector<size_t,DIM> new_n_els;
@@ -177,11 +177,12 @@ public:
 	    new_p=refine==RefineP ? m_baseOrder+base.template cast<int>(): m_baseOrder;
 	    new_n_els=refine==RefineH ?  m_base_n_elements.array()*Eigen::pow(2*Eigen::Vector<size_t, DIM>::Ones().array(),base.array()) : m_base_n_elements;
 	    
-		
-	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p.array()+1,1 );
+
+	    const int layers=5;
+	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p.array()+layers+1,1 );
 
 	    //std::cout<<"trying order"<<order<<std::endl;
-	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, new_p.array()+1,  new_n_els,1 );
+	    Eigen::Vector<size_t, DIM> n_els= static_cast<Derived *>(this)->elementsForBox(H, new_p.array()+layers+1,  new_n_els,1 );
 
 	    //std::cout<<"trying orer"<<order.transpose()<<" and "<<n_els.transpose()<<"  elements"<<std::endl;
 
@@ -200,7 +201,7 @@ public:
 
 	    ChebychevInterpolation::chebtransform<T,DIM>(data,trafo_data,order);
 	    for(int d=0;d<DIM;d++) {
-		const double e=Util::compute_slice_norm<T,DIM,DIMOUT>(trafo_data,order.template cast<size_t>(), d);
+		const double e=Util::compute_slice_norm<T,DIM,DIMOUT>(trafo_data,order.template cast<size_t>(), d,layers);
 		//std::cout<<"d="<<d<<" e="<<e<<std::endl;;
 		error[d]=std::max(error[d],e);
 	    }
@@ -522,6 +523,7 @@ public:
 #endif
 
 			//evaluate for the cousin targets using the interpolated data
+
 			evaluateSingleFromInterp(interpolationData[boxId], m_target_octree->point(i), center, H,
 					   tmp_result.local());
 
@@ -1538,7 +1540,7 @@ public:
 		idx+=nb;
 	    }
 	}else{
-	    std::vector<int> elIds(N);
+	    std::vector<size_t> elIds(N);	    
 	    for(size_t idx=0;idx<N;idx++) {
 		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	    }

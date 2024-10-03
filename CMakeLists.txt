@@ -3,9 +3,9 @@ project(cmake_example)
 #
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast -fno-math-errno -ffast-math -funroll-loops  -UUSE_NGSOLVE")
-string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Ofast ")
-string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O2 ")
+string(APPEND CMAKE_CXX_FLAGS_RELEASE " -Ofast -fno-math-errno -ffast-math -funroll-loops  -UUSE_NGSOLVE -flto=auto")
+string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Ofast  -flto=auto")
+string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O2  -flto=auto")
 add_definitions(-DEIGEN_FAST_MATH=1 -DEIGEN_DONT_PARALLELIZE   )
 
 find_package(unordered_dense CONFIG )
