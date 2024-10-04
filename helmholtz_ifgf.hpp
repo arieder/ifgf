@@ -19,8 +19,6 @@ public:
         k(waveNumber)
     {
 
-	m_order_inc=(log(2*n_elem)/log(2));
-	std::cout<<"ho="<<m_order_inc<<std::endl;
     }
 
     typedef std::complex<double > T ;
@@ -156,7 +154,7 @@ public:
 	Eigen::Vector<int,dim> order=baseOrder;
 
 	if(step==0) {
-	    order=baseOrder.array()-3;//(baseOrder.array().template cast<double>()*Eigen::log(4./baseOrder.array().template cast<double>())).template cast<int>();
+	    order=(baseOrder.array()-3).cwiseMax(2);
 	}
 	
         return order;
@@ -187,7 +185,6 @@ public:
 
 private:
     double k;
-    int m_order_inc;
 
 };
 
