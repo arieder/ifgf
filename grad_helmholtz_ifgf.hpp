@@ -50,7 +50,7 @@ public:
 	if constexpr(dx==-1) {
 	    double d = x.norm();
 	    return (d < 1e-12) ? 0 : (1 / (4 * M_PI)) * exp(-k * d) / d;
-	}else{
+  	}else{
 	    return d<1e-12 ? 0.0:   -(1.0 / (4.0 * M_PI)) * (1.0/(d*d)) * exp(-k * d) *(-k-1.0/d)*x[m_dx];
 	}
     }
@@ -224,7 +224,7 @@ public:
 	// order[2]=std::round(baseOrder*1.5);
 
 	if(step==0) {
-	    order=baseOrder.array()-3;//(baseOrder.array().template cast<double>()*Eigen::log(4./baseOrder.array().template cast<double>())).template cast<int>();
+	    order=(baseOrder.array()-3).cwiseMax(2);//(baseOrder.array().template cast<double>()*Eigen::log(4./baseOrder.array().template cast<double>())).template cast<int>();
 		//std::cout<<"order="<<order.transpose()<<std::endl;
 	    //order[0]-=2;
 	    //order[2]=std::round(baseOrder[2]/1.3);

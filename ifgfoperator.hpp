@@ -85,7 +85,7 @@ public:
 
 	    std::cout<<"settled on order="<<m_baseOrder.transpose()<<std::endl;
 	}else {
-	    m_baseOrder[0]-=2; 
+	    m_baseOrder[0]=std::max(m_baseOrder[0]-3,2); 
 	}
 
 
@@ -178,6 +178,8 @@ public:
 	    new_n_els=refine==RefineH ?  m_base_n_elements.array()*Eigen::pow(2*Eigen::Vector<size_t, DIM>::Ones().array(),base.array()) : m_base_n_elements;
 	    
 
+	    //we compute a higher order interpolation and then sum over the additional chebychev coefficients to get
+	    //a better understanding over the error
 	    const int layers=3;
 	    const auto order = static_cast<Derived *>(this)->orderForBox(H, new_p.array()+layers+1,1 );
 
@@ -202,7 +204,7 @@ public:
 	    ChebychevInterpolation::chebtransform<T,DIM>(data,trafo_data,order);
 	    for(int d=0;d<DIM;d++) {
 		const double e=Util::compute_slice_norm<T,DIM,DIMOUT>(trafo_data,order.template cast<size_t>(), d,layers);
-		error[d]=std::max(error[d],e);
+		error[d]=e;
 	    }
 		
 	    double maxe=error.maxCoeff();
@@ -295,7 +297,7 @@ public:
 
 	
 	tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numBoxes(level)),
-        [&](tbb::blocked_range<size_t> r) {
+			  [&](tbb::blocked_range<size_t> r) {
             for(size_t id=r.begin();id<r.end();id++) {
                 recursive_mult(id, level, new_weights,local_result.local(), interpolationData[m_src_octree->parentId(level, id)],
 			       tmp_result.local(),  transformedNodes.local());                
@@ -1553,12 +1555,16 @@ public:
 		idx+=nb;
 	    }
 	}else{
-	    std::vector<size_t> elIds(N);	    
+	    std::vector<size_t> elIds(N);
 	    for(size_t idx=0;idx<N;idx++) {
-		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
+		size_t elId=data.grid.elementForPoint(transformed.col(idx));
+		elIds[idx]=elId;
 	    }
+
+	    
 	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
 	    PointArray tmp=Util::copy_with_permutation(transformed,perm);
+	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
 	    size_t idx=0;
 	    while (idx<N)
 	    {
@@ -1571,16 +1577,16 @@ public:
 		}
 
 		if(el==SIZE_MAX) { //cutoff values like that
-		    result.middleRows(idx,nb).fill(0);
+		    tmp_result.middleRows(idx,nb).fill(0);
 		}else{
 		    const size_t memId=data.grid.memId(el);
 
 		    tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
-		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order);
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), tmp_result.middleRows(idx,nb), data.order);
 		}
 		idx+=nb;
 	    }
-	    result=Util::copy_with_inverse_permutation(result,perm);
+	    result=Util::copy_with_inverse_permutation(tmp_result,perm);
 	}
 	
         

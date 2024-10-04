@@ -510,6 +510,10 @@ public:
 		*/
                 //1e-3;//H/(m_diameter+dist+target.m_diameter);
 
+
+		if(smin >=smax) {
+		    smin=smax-0.05;
+		}
 		
 		box.min()(0)=smin;
 		box.max()(0)=smax;

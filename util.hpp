@@ -5,6 +5,8 @@
 #include <numeric>
 
 #include <algorithm>
+#include <oneapi/tbb/parallel_for.h>
+#include <tbb/parallel_sort.h>
 
 namespace Util
 {
@@ -14,7 +16,7 @@ auto sort_with_permutation( RandomIt cbegin, RandomIt cend, Compare comp)
     auto len = std::distance(cbegin, cend);
     std::vector<size_t> perm(len);
     std::iota(perm.begin(), perm.end(), 0U);
-    std::sort(perm.begin(), perm.end(),
+    tbb::parallel_sort (perm.begin(), perm.end(),
     [&](const size_t &a, const size_t &b) {
         return comp(*(cbegin + a), *(cbegin + b));
     });
@@ -29,6 +31,7 @@ typename T::PlainObject copy_with_permutation(const T &v, const std::vector<size
 	for (size_t i = 0; i < v.rows(); i++) {	
 	    data.row(i) = v.row(permutation[i]);
 	}
+    
     }else{
 	for (size_t i = 0; i < v.cols(); i++) {	
 	    data.col(i) = v.col(permutation[i]);
@@ -42,17 +45,18 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
 {
 
     typename T::PlainObject data(v.rows(), v.cols());
-    if constexpr (T::ColsAtCompileTime==1) {
+    if constexpr (T::ColsAtCompileTime==1) {	
 	for (size_t i = 0; i < v.rows(); i++) {	
 	    data.row(permutation[i]) = v.row(i);
 	}
+	
     }else{
-	for (size_t i = 0; i < v.cols(); i++) {	
+	for (size_t i = 0; i < v.cols; i++) {	
 	    data.col(permutation[i]) = v.col(i);
-	}
+	}    
     }
-    return data;
 
+    return data;
 }
 
     //assumes: p[0] in (0,1) and p[1] in (-pi,pi)
@@ -65,7 +69,7 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
 	    res.row(0)= p.row(0)*Eigen::cos(p.row(1));
 	    res.row(1)= p.row(0)*Eigen::sin(p.row(1));
         }else {
-            assert(DIM==3);
+            static_assert(DIM==3);
 	    res.row(0)=p.row(0)*Eigen::cos(p.row(2))*Eigen::sin(p.row(1));
 	    res.row(1)=p.row(0)*Eigen::sin(p.row(2))*Eigen::sin(p.row(1));
 	    res.row(2)=p.row(0)*Eigen::cos(p.row(1));	    
@@ -85,7 +89,7 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
 	    res.row(0)= xc[0]+(H/p.row(0))*Eigen::cos(p.row(1));
 	    res.row(1)= xc[1]+(H/p.row(0))*Eigen::sin(p.row(1));
         }else {
-            assert(DIM==3);
+            static_assert(DIM==3);
 	    res.row(0)=xc[0]+(H/p.row(0))*Eigen::cos(p.row(2))*Eigen::sin(p.row(1));
 	    res.row(1)=xc[1]+(H/p.row(0))*Eigen::sin(p.row(2))*Eigen::sin(p.row(1));
 	    res.row(2)=xc[2]+(H/p.row(0))*Eigen::cos(p.row(1));	    
@@ -117,7 +121,7 @@ typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vec
             return  res;
 
         }else{
-            assert(DIM==3);
+            static_assert(DIM==3);
             const double phi = std::atan2(xp[1], xp[0]);
             const double a=(xp[0]*xp[0]+xp[1]*xp[1]);
             const double theta= std::atan2(sqrt(a),xp[2]);
