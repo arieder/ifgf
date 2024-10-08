@@ -263,7 +263,7 @@ public:
         //sort the points by their morton order for better locality later on
         std::cout << "sorting..." << std::endl;
         m_permutation = Util::sort_with_permutation( pnts.colwise().begin(), pnts.colwise().end(), zorder_knn::Less<Point, DIM>(bbox));
-        m_pnts = Util::copy_with_permutation(pnts, m_permutation);
+        m_pnts = Util::copy_with_permutation_colwise(pnts, m_permutation);
 
 	m_diameter=bbox.diagonal().norm();
 

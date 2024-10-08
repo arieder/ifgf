@@ -1,6 +1,7 @@
 #ifndef __IFGFOPERATOR_HPP_
 #define __IFGFOPERATOR_HPP_
 
+#include "Eigen/src/Core/util/Constants.h"
 #include "config.hpp"
 
 #include <Eigen/Dense>
@@ -227,7 +228,7 @@ public:
 	std::cout<<"mult "<<m_baseOrder.transpose()<<std::endl;
 
 	std::cout<<"permutation"<<std::endl;
-        Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation (weights, m_src_octree->permutation());
+        Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation_rowwise (weights, m_src_octree->permutation());
 	
         Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(m_numTargets,DIMOUT);
         result.fill(0);
@@ -560,8 +561,11 @@ public:
 
 	    std::cout<<"propagating"<<std::endl;
 
-	    if(level<1) //there is no parent 
+	    if(level<1) //there is no parent
+	    {		
 		break;
+	    }
+	    
             //Now transform the interpolation data to the parents
 	    std::cout<<"propagating upward"<<std::endl;
 	    initInterpolationData(level-1,1, parentInterpolationData);
@@ -569,6 +573,7 @@ public:
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numActiveCones(level-1,1)),
 		[&](tbb::blocked_range<size_t> r) {
 		    tmp_result.local().resize(ho_chebNodes.cols(),DIMOUT);
+		    
 		    transformedNodes.local().resize(3,ho_chebNodes.cols());
 #ifdef USE_NGSOLVE
 	    static ngcore::Timer t("ngbem propagate up");
@@ -594,7 +599,7 @@ public:
 		    } 
 
 		    transformInterpToCart(pGrid.transform(parentCone.id(),ho_chebNodes), transformedNodes.local(), parent_center, pH);
-		    const size_t stride=ho_chebNodes.cols();					
+		    const size_t stride=ho_chebNodes.cols();
 
 		    //std::cout<<"pc"<<parentCone.id()<<" "<<parentCone.memId()<<" "<<nterpolationData[parentId].values.size()<<std::endl;
 		    parentInterpolationData[parentId].values.middleRows(parentCone.memId()*stride,stride).fill(0);
@@ -758,7 +763,11 @@ public:
         assert((m_connectivity.array() - 1).matrix().norm() < 1e-10);
 #endif
 
-        return Util::copy_with_inverse_permutation(result, m_target_octree->permutation());
+
+	Eigen::Array<T, Eigen::Dynamic, DIMOUT> true_result(result.rows(),result.cols());
+        Util::copy_with_inverse_permutation_rowwise<T,DIMOUT>(result, m_target_octree->permutation(),true_result);
+
+	return true_result;
     }
 
 
@@ -1120,7 +1129,7 @@ public:
 	    elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	}
 	std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	PointArray tmp=Util::copy_with_permutation(transformed,perm);
+	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
 	size_t idx=0;
 	Eigen::Array<T,Eigen::Dynamic, DIMOUT> tmp_data(result.rows(),result.cols());
 	while (idx<N)
@@ -1275,7 +1284,7 @@ public:
 	//std::vector<size_t> perm(elIds.size());
 	//std::iota(perm.begin(),perm.end(),0);
 	
-	PointArray tmp=Util::copy_with_permutation(transformed,perm);
+	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
 	Eigen::Array<T,Eigen::Dynamic, DIMOUT> tmp_data(result.rows(),result.cols());
 	Eigen::Array<T, Eigen::Dynamic,DIMOUT> res_tmp;
   	
@@ -1513,7 +1522,10 @@ public:
 #ifdef USE_NGSOLVE
 	static ngcore::Timer t("ngbem transfer interp");
 	ngcore::RegionTimer reg(t);
+
 #endif
+
+	assert(result.rows()==targets.cols());
 
         //transform to the child interpolation domain
         PointArray transformed(DIM, targets.cols());
@@ -1526,69 +1538,35 @@ public:
 	const auto& grid=data.grid;
 
 	const int N=targets.cols();
-	if(false) {
-	    size_t idx=0;
-	    while (idx<N)
-	    {
-		size_t nb=1;
-		//std::cout<<"\t box: "<<data.grid.domain()<<std::endl;
-
-		const size_t el=data.grid.elementForPoint(transformed.col(idx));
-
-
-		//transformed.col(idx)=data.grid.transformBackwards(el,transformed.col(idx));
-		//look if any of the following points are also in this element. that way we can process them together
-		while(idx+nb<transformed.cols() && data.grid.elementForPoint(transformed.col(idx+nb))==el) {
-		    //transformed.col(idx+nb)=data.grid.transformBackwards(el,transformed.col(idx+nb));		
-		    nb++;
-		}
-
-		if(el==SIZE_MAX) { //cutoff values like that
-		    result.middleRows(idx,nb).fill(0);		    
-		 
-		}else{
-		    const size_t memId=data.grid.memId(el);
-		    //transformed.middleCols(idx,nb)=data.grid.transformBackwards(el,transformed.middleCols(idx,nb));
-		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(transformed.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
-									     data.grid.region(el));
-		}
-		idx+=nb;
-	    }
-	}else{
-	    std::vector<size_t> elIds(N);
-	    for(size_t idx=0;idx<N;idx++) {
-		size_t elId=data.grid.elementForPoint(transformed.col(idx));
-		elIds[idx]=elId;
-	    }
-
-	    
-	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	    PointArray tmp=Util::copy_with_permutation(transformed,perm);
-	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
-	    size_t idx=0;
-	    while (idx<N)
-	    {
-		size_t nb=1;
-		const size_t el=elIds[perm[idx]];
-
-		//look if any of the following points are also in this element. that way we can process them together
-		while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
-		    nb++;
-		}
-
-		if(el==SIZE_MAX) { //cutoff values like that
-		    tmp_result.middleRows(idx,nb).fill(0);
-		}else{
-		    const size_t memId=data.grid.memId(el);
-
-		    tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
-		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), tmp_result.middleRows(idx,nb), data.order);
-		}
-		idx+=nb;
-	    }
-	    result=Util::copy_with_inverse_permutation(tmp_result,perm);
+	std::vector<size_t> elIds(N);	    
+	for(size_t idx=0;idx<N;idx++) {
+	    elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	}
-	
+	std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
+	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+	Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
+	size_t idx=0;
+	while (idx<N)
+	{
+	    size_t nb=1;
+	    const size_t el=elIds[perm[idx]];
+
+	    //look if any of the following points are also in this element. that way we can process them together
+	    while(idx+nb<transformed.cols() && elIds[perm[idx+nb]]==el) {
+		nb++;
+	    }
+
+	    if(el==SIZE_MAX) { //cutoff values like that
+		tmp_result.middleRows(idx,nb).fill(0);
+	    }else{
+		const size_t memId=data.grid.memId(el);
+
+		tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
+		ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), tmp_result.middleRows(idx,nb), data.order);
+	    }
+	    idx+=nb;
+	}
+	Util::copy_with_inverse_permutation_rowwise<T,DIMOUT>(tmp_result,perm,result);
         
 	static_cast<const Derived *>(this)->transfer_factor(targets, xc, H, p_xc, pH, result);	
     }
@@ -1698,7 +1676,8 @@ public:
 		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	    }
 	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	    PointArray tmp=Util::copy_with_permutation(transformed,perm);
+	    PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
 	    size_t idx=0;
 	    while (idx<N)
 	    {
@@ -1710,18 +1689,18 @@ public:
 		    nb++;
 		}
 		if(el==SIZE_MAX) { //cutoff values like that
-		    result.middleRows(idx,nb).fill(0);
+		    tmp_result.middleRows(idx,nb).fill(0);
 		}else{
 		    const size_t memId=data.grid.memId(el);
 
 		    //tmp.middleCols(idx,nb)=data.grid.transformBackwards(el,tmp.middleCols(idx,nb));
-		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), result.middleRows(idx,nb), data.order,
+		    ChebychevInterpolation::parallel_evaluate<T, DIM,DIMOUT>(tmp.array().middleCols(idx,nb), data.values.middleRows(memId*stride,stride), tmp_result.middleRows(idx,nb), data.order,
 									     data.grid.region(el));
 		}
 		idx+=nb;
 	    }
 
-	    result=Util::copy_with_inverse_permutation(result,perm);
+	    Util::copy_with_inverse_permutation_rowwise<T,DIMOUT>(tmp_result,perm,result);
 	    for (unsigned int j = 0; j < targets.cols(); j++) {
 		const auto cf = static_cast<const Derived *>(this)->CF(targets.col(j).matrix() - xc);
 		result.row(j) *= cf;

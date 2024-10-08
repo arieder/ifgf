@@ -10,54 +10,61 @@
 
 namespace Util
 {
-template <typename RandomIt, class Compare>
-auto sort_with_permutation( RandomIt cbegin, RandomIt cend, Compare comp)
-{
-    auto len = std::distance(cbegin, cend);
-    std::vector<size_t> perm(len);
-    std::iota(perm.begin(), perm.end(), 0U);
-    tbb::parallel_sort (perm.begin(), perm.end(),
-    [&](const size_t &a, const size_t &b) {
-        return comp(*(cbegin + a), *(cbegin + b));
-    });
-    return perm;
-}
+    template <typename RandomIt, class Compare>
+    auto sort_with_permutation( RandomIt cbegin, RandomIt cend, Compare comp)
+    {
+	auto len = std::distance(cbegin, cend);
+	std::vector<size_t> perm(len);
+	std::iota(perm.begin(), perm.end(), 0U);
+	std::sort (perm.begin(), perm.end(),
+			    [&](const size_t &a, const size_t &b) {
+				return comp(*(cbegin + a), *(cbegin + b));
+			    });
+	return perm;
+    }
 
-template <typename T>
-typename T::PlainObject copy_with_permutation(const T &v, const std::vector<size_t> &permutation)
-{
-    typename T::PlainObject data(v.rows(), v.cols());
-    if constexpr (T::ColsAtCompileTime==1) {	
+    template <typename T>
+    typename T::PlainObject copy_with_permutation_rowwise(const T &v, const std::vector<size_t> &permutation)
+    {
+	typename T::PlainObject data(v.rows(), v.cols());
 	for (size_t i = 0; i < v.rows(); i++) {	
 	    data.row(i) = v.row(permutation[i]);
 	}
     
-    }else{
+	return data;
+    }
+
+    template <typename T>
+    typename T::PlainObject copy_with_permutation_colwise(const T &v, const std::vector<size_t> &permutation)
+    {
+	typename T::PlainObject data(v.rows(), v.cols());
 	for (size_t i = 0; i < v.cols(); i++) {	
 	    data.col(i) = v.col(permutation[i]);
 	}
-    }
-    return data;
-}
     
-template <typename T>
-typename T::PlainObject copy_with_inverse_permutation(const T &v, const std::vector<size_t> &permutation)
-{
-
-    typename T::PlainObject data(v.rows(), v.cols());
-    if constexpr (T::ColsAtCompileTime==1) {	
-	for (size_t i = 0; i < v.rows(); i++) {	
-	    data.row(permutation[i]) = v.row(i);
-	}
-	
-    }else{
-	for (size_t i = 0; i < v.cols; i++) {	
-	    data.col(permutation[i]) = v.col(i);
-	}    
+	return data;
     }
 
-    return data;
-}
+
+    template <typename T>
+    typename T::PlainObject copy_with_inverse_permutation_colwise(const T &v, const std::vector<size_t> &permutation)
+    {
+	typename T::PlainObject data(v.rows(), v.cols());
+	for (size_t i = 0; i < v.cols(); i++) {	
+	    data.col(permutation[i]) = v.col(i);	    
+	}
+	return data;
+    }
+
+    template <typename T, int DIMOUT>
+    void copy_with_inverse_permutation_rowwise(const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> > &v, const std::vector<size_t> &permutation,
+					       Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > target)
+    {
+	for (size_t i = 0; i < v.rows(); i++) {
+	    //std::cout<<"permutation"<<permutation[i]<<" "<<target.rows()<<" "<<std::endl;
+	    target.row(permutation[i]) = v.row(i);
+	}       
+    }
 
     //assumes: p[0] in (0,1) and p[1] in (-pi,pi)
     template<size_t DIM,long int POINTS>
