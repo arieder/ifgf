@@ -23,37 +23,32 @@ namespace Util
 	return perm;
     }
 
-    template <typename T>
-    typename T::PlainObject copy_with_permutation_rowwise(const T &v, const std::vector<size_t> &permutation)
+    template <typename T, int DIMOUT>
+    void copy_with_permutation_rowwise(const Eigen::Ref<const Eigen::Array<T, Eigen::Dynamic, DIMOUT> > &v, const std::vector<size_t> &permutation,
+				       Eigen::Ref<Eigen::Array<T, Eigen::Dynamic, DIMOUT> > target)
     {
-	typename T::PlainObject data(v.rows(), v.cols());
 	for (size_t i = 0; i < v.rows(); i++) {	
-	    data.row(i) = v.row(permutation[i]);
+	    target.row(i) = v.row(permutation[i]);
 	}
-    
-	return data;
     }
 
-    template <typename T>
-    typename T::PlainObject copy_with_permutation_colwise(const T &v, const std::vector<size_t> &permutation)
+    template <typename T, int DIMOUT>
+    void copy_with_permutation_colwise(const Eigen::Ref<const Eigen::Array<T, DIMOUT, Eigen::Dynamic> > &v, const std::vector<size_t> &permutation,
+				       Eigen::Ref<Eigen::Array<T, DIMOUT, Eigen::Dynamic> > target)
     {
-	typename T::PlainObject data(v.rows(), v.cols());
 	for (size_t i = 0; i < v.cols(); i++) {	
-	    data.col(i) = v.col(permutation[i]);
-	}
-    
-	return data;
+	    target.col(i) = v.col(permutation[i]);
+	}    
     }
 
 
-    template <typename T>
-    typename T::PlainObject copy_with_inverse_permutation_colwise(const T &v, const std::vector<size_t> &permutation)
+    template <typename T, int DIMOUT>
+    void copy_with_inverse_permutation_colwise(const Eigen::Ref<const Eigen::Array<T, DIMOUT, Eigen::Dynamic> > &v, const std::vector<size_t> &permutation,
+					       Eigen::Ref<Eigen::Array<T, DIMOUT,Eigen::Dynamic> > target)
     {
-	typename T::PlainObject data(v.rows(), v.cols());
 	for (size_t i = 0; i < v.cols(); i++) {	
-	    data.col(permutation[i]) = v.col(i);	    
+	    target.col(permutation[i]) = v.col(i);	    
 	}
-	return data;
     }
 
     template <typename T, int DIMOUT>

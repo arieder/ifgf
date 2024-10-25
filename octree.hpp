@@ -263,12 +263,13 @@ public:
         //sort the points by their morton order for better locality later on
         std::cout << "sorting..." << std::endl;
         m_permutation = Util::sort_with_permutation( pnts.colwise().begin(), pnts.colwise().end(), zorder_knn::Less<Point, DIM>(bbox));
-        m_pnts = Util::copy_with_permutation_colwise(pnts, m_permutation);
+	m_pnts.resize(DIM, pnts.cols());
+        Util::copy_with_permutation_colwise<double,DIM>(pnts, m_permutation,m_pnts);
 
 	m_diameter=bbox.diagonal().norm();
 
 	m_levels = 0;
-	m_depth=-1;
+	m_depth = -1;
         m_root = buildOctreeNode(0, std::make_pair(0, m_pnts.cols()), bbox);
 	m_depth=m_levels;
 

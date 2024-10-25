@@ -32,7 +32,9 @@ public:
     //once the octree is ready, we can reorder it such that the morton-order is observed
     void onOctreeReady()
     {
-	m_normals=Util::copy_with_permutation_colwise(m_normals, this->src_octree().permutation());
+	PointArray sorted(dim, m_normals.cols());
+	Util::copy_with_permutation_colwise<double,dim>(m_normals, this->src_octree().permutation(),sorted);
+	m_normals=sorted;
     }
    
    

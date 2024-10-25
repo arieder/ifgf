@@ -210,7 +210,11 @@ public:
         return result;
     }
 
+    
 
+
+
+    
     
     inline Eigen::Vector<int,dim> orderForBox(double H, Eigen::Vector<int,dim> baseOrder,int step=0) const
     {

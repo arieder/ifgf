@@ -228,7 +228,8 @@ public:
 	std::cout<<"mult "<<m_baseOrder.transpose()<<std::endl;
 
 	std::cout<<"permutation"<<std::endl;
-        Eigen::Vector<T, Eigen::Dynamic> new_weights = Util::copy_with_permutation_rowwise (weights, m_src_octree->permutation());
+	Eigen::Vector<T, Eigen::Dynamic> new_weights(weights.size());
+        Util::copy_with_permutation_rowwise<T,1> (weights.array(), m_src_octree->permutation(),new_weights.array());
 	
         Eigen::Array<T, Eigen::Dynamic, DIMOUT> result(m_numTargets,DIMOUT);
         result.fill(0);
@@ -349,9 +350,6 @@ public:
 								   new_weights.segment(srcs.first, nS),
 								   result.row(i),
 								   srcs);
-
-
-		      
 		  }
 	      }});
 
@@ -610,20 +608,13 @@ public:
 			double H = bbox.sideLength();
 			
 			
-			//tmp_result.local().fill(0);
+
 			transferInterp(interpolationData[childBox], transformedNodes.local(), center, H, parent_center, pH, tmp_result.local());
 						
 			parentInterpolationData[parentId].values.middleRows(parentCone.memId()*stride,stride)+=tmp_result.local();
 		    }
-		    		    
-		    /*//now do the chebtrafo
-		    tmp_chebt.local().resize(stride);
-		    ChebychevInterpolation::chebtransform<T,DIM>(interpolationData[parentId].values.middleRows(parentCone.memId()*stride,stride),tmp_chebt.local(),high_order);
-		    parentInterpolationData[parentId].values.middleRows(parentCone.memId()*stride,stride)=tmp_chebt.local();*/
 	    }});
 #else //BE_FAST
-
-
 	    std::cout<<"rot1"<<std::endl;
 	    initInterpolationData(level,2,parentInterpolationData);
 	    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_src_octree->numActiveCones(level,2)),
@@ -747,9 +738,6 @@ public:
 
 
 #endif
-
-
-	    std::cout<<"swapping"<<std::endl;
             std::swap(interpolationData, parentInterpolationData);
             parentInterpolationData.resize(0);
 
@@ -1129,7 +1117,8 @@ public:
 	    elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	}
 	std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+	PointArray tmp(DIMOUT,transformed.cols());
+	Util::copy_with_permutation_colwise(transformed,perm,tmp);
 	size_t idx=0;
 	Eigen::Array<T,Eigen::Dynamic, DIMOUT> tmp_data(result.rows(),result.cols());
 	while (idx<N)
@@ -1283,8 +1272,10 @@ public:
 	std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
 	//std::vector<size_t> perm(elIds.size());
 	//std::iota(perm.begin(),perm.end(),0);
-	
-	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+
+
+	PointArray tmp(DIMOUT,transformed.cols());
+	Util::copy_with_permutation_colwise(transformed,perm,tmp);
 	Eigen::Array<T,Eigen::Dynamic, DIMOUT> tmp_data(result.rows(),result.cols());
 	Eigen::Array<T, Eigen::Dynamic,DIMOUT> res_tmp;
   	
@@ -1543,7 +1534,8 @@ public:
 	    elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	}
 	std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+	PointArray tmp(DIM,transformed.cols());
+	Util::copy_with_permutation_colwise<double,DIM>(transformed,perm,tmp);
 	Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
 	size_t idx=0;
 	while (idx<N)
@@ -1676,7 +1668,8 @@ public:
 		elIds[idx]=data.grid.elementForPoint(transformed.col(idx));
 	    }
 	    std::vector<size_t> perm=Util::sort_with_permutation(elIds.begin(),elIds.end(), [](auto x, auto y){ return x<y;});
-	    PointArray tmp=Util::copy_with_permutation_colwise(transformed,perm);
+	    PointArray tmp(DIM,transformed.cols());
+	    Util::copy_with_permutation_colwise<double,DIM>(transformed,perm,tmp);
 	    Eigen::Array<T, Eigen::Dynamic, DIMOUT> tmp_result(transformed.cols(),DIMOUT);
 	    size_t idx=0;
 	    while (idx<N)
